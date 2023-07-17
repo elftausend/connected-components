@@ -8,7 +8,7 @@ use custos::{
     cuda::{api::CUstream, CUDAPtr},
     flag::AllocFlag,
     prelude::CUBuffer,
-    static_api::static_cuda,
+    static_api::static_cuda, buf,
 };
 use glow::*;
 use nvjpeg_sys::{nvjpegChromaSubsampling_t, nvjpegGetImageInfo};
@@ -392,16 +392,19 @@ pub fn main() {
                                             device.stream().sync().unwrap();
                                         }
                                         Mode::Labels => {
+                                            let mut labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
+
                                             label_components(
-                                                &mut surface,
+                                                &mut labels,
                                                 width as usize,
                                                 height as usize,
                                             )
                                             .unwrap();
 
                                             device.stream().sync().unwrap();
+                                            
                                             compute_labels(
-                                                &surface_texture,
+                                                &labels,
                                                 &mut surface,
                                                 &channels[0],
                                                 &channels[1],
@@ -410,6 +413,7 @@ pub fn main() {
                                                 height as usize,
                                             )
                                             .unwrap();
+                                            device.stream().sync().unwrap();
                                         }
                                     }
                                 }

@@ -25,7 +25,7 @@ extern "C"{
         }
     }
 
-    __global__ void labelComponents(cudaSurfaceObject_t target, int width, int height) {
+    __global__ void labelComponents(uchar4* target, int width, int height) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
     
@@ -41,23 +41,23 @@ extern "C"{
 
         uchar4 color = make_uchar4(colorX, colorY, 0, 255);
 
-        surf2Dwrite(color, target, x * sizeof(uchar4), height -1 - y);
+        target[y * width + x] = color;
+
+        //surf2Dwrite(color, target, x * sizeof(uchar4), height -1 - y);
     }
 
-    __global__ void computeLabels(cudaTextureObject_t input, cudaSurfaceObject_t out, int width, int height, unsigned char *R, unsigned char *G, unsigned char *B) {
+    __global__ void computeLabels(uchar4* input, cudaSurfaceObject_t out, int width, int height, unsigned char *R, unsigned char *G, unsigned char *B) {
         int x = blockIdx.x * blockDim.x + threadIdx.x;
         int y = blockIdx.y * blockDim.y + threadIdx.y;
-    
-        if (!(x < width && y < height)) {
+
+        if (x >= width) {
             return;
         }
-
-        __shared__ uchar4 labels[8][32];
-
-        labels[threadIdx.y][threadIdx.x] = tex2D<uchar4>(input, y, x);
-        __syncthreads();
-
-        uchar4 label = labels[0][0];
+        
+        if (y >= height) {
+            return;
+        }
+        
 
         // shared?
         unsigned char valR = R[y * width + x]; 
@@ -65,32 +65,24 @@ extern "C"{
         unsigned char valB = B[y * width + x]; 
 
         int threshold = 4;
+        uchar4 currentLabel = input[y * width + x];
 
-        if (threadIdx.y+1 < 8) {
+        if (x+1 < width) {
             unsigned char valRedRight = R[y * width + x + 1];
             unsigned char valGreenRight = G[y * width + x + 1];
             unsigned char valBlueRight = B[y * width + x + 1];
-            uchar4 labelRight = labels[threadIdx.y +1 ][threadIdx.x];
+            uchar4 labelRight = input[y * width + x + 1];
             if (abs(valRedRight - valR) < threshold && abs(valGreenRight - valG) < threshold && abs(valBlueRight - valB) < threshold) {
-                surf2Dwrite(labelRight, out, x * sizeof(char4), height -1 - y);
+                
+                if ((int) currentLabel.x + (int) currentLabel.y < (int) labelRight.x + (int) labelRight.y) {
+                    if (blockIdx.y == 0) {
+                        printf("label right: %d %d %d\n", labelRight.x, labelRight.y, labelRight.z);
+                    }
+                    surf2Dwrite(labelRight, out, x * sizeof(char4), height -1 - y);
+                    return;
+                }
             }   
-
-            if (x == 0 && y == 0) {
-                //printf("labelRight: %d %d %d %d\n", labelRight.x, labelRight.y, labelRight.z, labelRight.w);
-            }
+            surf2Dwrite(currentLabel, out, x * sizeof(char4), height -1 - y);
         }
-    
-        /*if (threadIdx.y -1 > 0) {
-            unsigned char valRedRight = R[y * width + x - 1];
-            unsigned char valGreenRight = G[y * width + x - 1];
-            unsigned char valBlueRight = B[y * width + x - 1];
-            char4 labelRight = labels[threadIdx.y - 1][threadIdx.x];
-            if (abs(valRedRight - valR) < threshold && abs(valGreenRight - valG) < threshold && abs(valBlueRight - valB) < threshold) {
-                surf2Dwrite(labelRight, out, x * sizeof(char4), height -1 - y);
-            }   
-        }*/
-
-
-//        surf2Dwrite(color, target, x * sizeof(uchar4), height -1 - y);
     }
 }
