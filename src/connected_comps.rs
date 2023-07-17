@@ -75,3 +75,27 @@ pub fn compute_labels(
         &[input, out, &width, &height, red, green, blue],
     )
 }
+
+pub fn copy_to_surface(labels: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, width: usize, height: usize) {
+    launch_kernel(
+        labels.device(),
+        [64, 135, 1],
+        [32, 8, 1],
+        0,
+        CUDA_SOURCE,
+        "copyToSurface",
+        &[labels, surface, &width, &height],
+    ).unwrap()
+}
+
+pub fn color_component_at_pixel(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, x: usize, y: usize, width: usize, height: usize) {
+    launch_kernel(
+        surface.device(),
+        [64, 135, 1],
+        [32, 8, 1],
+        0,
+        CUDA_SOURCE,
+        "colorComponentAtPixel",
+        &[&texture, surface, &x, &y, &width, &height],
+    ).unwrap()
+}

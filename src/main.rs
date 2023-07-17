@@ -116,7 +116,8 @@ pub fn main() {
         let mut widths = [0, 0, 0];
         let mut heights = [0, 0, 0];
 
-        let raw_data = std::fs::read("./maze.jpg").unwrap();
+        // let raw_data = std::fs::read("./maze_128x128.jpg").unwrap();
+        let raw_data = std::fs::read("./text.jpg").unwrap();
 
         let status = nvjpegGetImageInfo(
             decoder.handle,
@@ -129,7 +130,7 @@ pub fn main() {
         );
 
         let width = widths[0];
-        let height = 1080;
+        let height = 128; // 1080
 
         println!("width: {}, height: {}", width, height);
 
@@ -394,6 +395,7 @@ pub fn main() {
                                         Mode::Labels => {
                                             let mut labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
 
+
                                             label_components(
                                                 &mut labels,
                                                 width as usize,
@@ -402,17 +404,41 @@ pub fn main() {
                                             .unwrap();
 
                                             device.stream().sync().unwrap();
+
+                                            let mut updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
                                             
-                                            compute_labels(
-                                                &labels,
-                                                &mut surface,
-                                                &channels[0],
-                                                &channels[1],
-                                                &channels[2],
-                                                width as usize,
-                                                height as usize,
-                                            )
-                                            .unwrap();
+                                            for i in 0..width * height {
+                                                if i % 2 == 0 {
+                                                    compute_labels(
+                                                        &labels,
+                                                        &mut updated_labels,
+                                                        &channels[0],
+                                                        &channels[1],
+                                                        &channels[2],
+                                                        width as usize,
+                                                        height as usize,
+                                                    )
+                                                    .unwrap();
+                                                } else {
+                                                    compute_labels(
+                                                        &updated_labels,
+                                                        &mut labels,
+                                                        &channels[0],
+                                                        &channels[1],
+                                                        &channels[2],
+                                                        width as usize,
+                                                        height as usize,
+                                                    )
+                                                    .unwrap();
+                                                }
+                                                
+                                                device.stream().sync().unwrap();
+                                            }
+                                            
+                                            copy_to_surface(&updated_labels, &mut surface, width as usize, height as usize);
+                                            device.stream().sync().unwrap();
+                                            
+                                            color_component_at_pixel(&surface_texture, &mut surface, 10, 10, width as usize, height as usize);
                                             device.stream().sync().unwrap();
                                         }
                                     }
@@ -454,7 +480,7 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::connected_comps::{compute_labels, fill_cuda_surface, interleave_rgb, label_components};
+use crate::connected_comps::{compute_labels, fill_cuda_surface, interleave_rgb, label_components, copy_to_surface, color_component_at_pixel};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 
