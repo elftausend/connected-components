@@ -72,6 +72,7 @@ extern "C"{
             unsigned char valGreenRight = G[y * width + x + 1];
             unsigned char valBlueRight = B[y * width + x + 1];
             uchar4 labelRight = input[y * width + x + 1];
+            
             if (abs(valRedRight - valR) < threshold && abs(valGreenRight - valG) < threshold && abs(valBlueRight - valB) < threshold) {
                 
                 if ((int) currentLabel.x + (int) currentLabel.y < (int) labelRight.x + (int) labelRight.y) {
@@ -166,7 +167,7 @@ extern "C"{
         // uchar4 label = surf2Dread<uchar4>(surface, x * sizeof(uchar4), height -1 - y);
         float4 label = tex2D<float4>(texture, x, height -1 - y);
 
-        if (toSearchLabel.x == label.x && toSearchLabel.y == label.y && toSearchLabel.z == label.z) {
+        if (abs(toSearchLabel.x - label.x) < 0.019 && abs(toSearchLabel.y - label.y) < 0.019) {
             uchar4 color = make_uchar4(255, 0, 0, 255);
             surf2Dwrite(color, surface, x * sizeof(uchar4), height -1 - y);
         }

@@ -19,16 +19,19 @@ pub fn check_error(value: u32, msg: &str) {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Maze,
     Labels,
+    MouseHighlight
 }
 
 impl Mode {
     fn next(&mut self) {
         let mode = match self {
             Mode::Maze => Mode::Labels,
-            Mode::Labels => Mode::Maze,
+            Mode::Labels => Mode::MouseHighlight,
+            Mode::MouseHighlight => Mode::Maze,
         };
         *self = mode;
     }
@@ -295,7 +298,6 @@ pub fn main() {
 
         let mut count = 0;
 
-        let filter3x3 = custos::buf![1. / 9.; 9].to_cuda();
 
         /*let mut filter_data_buf = get_constant_memory(
             surface_texture.device(),
@@ -318,6 +320,8 @@ pub fn main() {
         filter_data_buf.write(&filter.read());*/
 
         let mut mode = Mode::Maze;
+
+        let mut updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
 
         event_loop.run(move |event, _, control_flow| {
             match event {
@@ -367,6 +371,22 @@ pub fn main() {
                         gl.delete_vertex_array(vertex_array);
                         *control_flow = ControlFlow::Exit
                     }
+                    // get location of mouse cursor on window 
+                    WindowEvent::CursorMoved { position, .. } => {
+                        let (win_width, win_height): (u32, u32) = window.window().inner_size().into();
+                        let (x, y) = (position.x as f32, position.y as f32);
+                        let (x, y) = ((x / win_width as f32) * width as f32, (y / win_height as f32) * height as f32);
+                        let cursor_loc = (x as usize, y as usize);
+
+                        if mode == Mode::MouseHighlight {
+                            copy_to_surface(&updated_labels, &mut surface, width as usize, height as usize);
+                            // device.stream().sync().unwrap();
+
+                            color_component_at_pixel(&surface_texture, &mut surface, cursor_loc.0, cursor_loc.1, width as usize, height as usize);
+                            //device.stream().sync().unwrap();
+                        }
+                        
+                    }
                     WindowEvent::KeyboardInput {
                         device_id,
                         input,
@@ -405,9 +425,9 @@ pub fn main() {
 
                                             device.stream().sync().unwrap();
 
-                                            let mut updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
+                                            updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
                                             
-                                            for i in 0..width * height {
+                                            for i in 0..width*2 {
                                                 if i % 2 == 0 {
                                                     compute_labels(
                                                         &labels,
@@ -438,9 +458,13 @@ pub fn main() {
                                             copy_to_surface(&updated_labels, &mut surface, width as usize, height as usize);
                                             device.stream().sync().unwrap();
                                             
-                                            color_component_at_pixel(&surface_texture, &mut surface, 10, 10, width as usize, height as usize);
+                                            // color_component_at_pixel(&surface_texture, &mut surface, 0, 0, width as usize, height as usize);
+                                            // fill the core f red
+                                            color_component_at_pixel(&surface_texture, &mut surface, 8, 64, width as usize, height as usize);
+
                                             device.stream().sync().unwrap();
                                         }
+                                        Mode::MouseHighlight => {},
                                     }
                                 }
                                 _ => (),
