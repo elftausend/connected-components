@@ -373,13 +373,13 @@ pub fn main() {
                     } => {
                         // switch between views with key press (label values)
                         if input.state == glutin::event::ElementState::Released {
+                            let channels = decoder.channels.as_ref().unwrap();
                             match input.virtual_keycode.as_ref() {
                                 Some(&glutin::event::VirtualKeyCode::Space) => {
                                     mode.next();
 
                                     match mode {
                                         Mode::Maze => {
-                                            let channels = decoder.channels.as_ref().unwrap();
                                             interleave_rgb(
                                                 &mut surface,
                                                 &channels[0],
@@ -389,10 +389,27 @@ pub fn main() {
                                                 height as usize,
                                             )
                                             .unwrap();
+                                            device.stream().sync().unwrap();
                                         }
                                         Mode::Labels => {
-                                            start_label_components(&mut surface, width as usize, height as usize).unwrap();
+                                            label_components(
+                                                &mut surface,
+                                                width as usize,
+                                                height as usize,
+                                            )
+                                            .unwrap();
+
                                             device.stream().sync().unwrap();
+                                            compute_labels(
+                                                &surface_texture,
+                                                &mut surface,
+                                                &channels[0],
+                                                &channels[1],
+                                                &channels[2],
+                                                width as usize,
+                                                height as usize,
+                                            )
+                                            .unwrap();
                                         }
                                     }
                                 }
@@ -433,7 +450,7 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::connected_comps::{fill_cuda_surface, interleave_rgb, start_label_components};
+use crate::connected_comps::{compute_labels, fill_cuda_surface, interleave_rgb, label_components};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 

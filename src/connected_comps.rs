@@ -40,7 +40,7 @@ pub fn interleave_rgb(
     )
 }
 
-pub fn start_label_components(
+pub fn label_components(
     target: &mut CUBuffer<u8>,
     width: usize,
     height: usize,
@@ -51,7 +51,7 @@ pub fn start_label_components(
         [32, 8, 1],
         0,
         CUDA_SOURCE,
-        "startlabelComponents",
+        "labelComponents",
         &[target, &width, &height],
     )
 }
@@ -59,6 +59,9 @@ pub fn start_label_components(
 pub fn compute_labels(
     input: &CUBuffer<u8>,
     out: &mut CUBuffer<u8>,
+    red: &CUBuffer<u8>,
+    green: &CUBuffer<u8>,
+    blue: &CUBuffer<u8>,
     width: usize,
     height: usize,
 ) -> custos::Result<()> {
@@ -69,6 +72,6 @@ pub fn compute_labels(
         0,
         CUDA_SOURCE,
         "computeLabels",
-        &[input, out, &width, &height],
+        &[input, out, &width, &height, red, green, blue],
     )
 }
