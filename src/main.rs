@@ -8,9 +8,10 @@ use custos::{
     cuda::{api::CUstream, CUDAPtr},
     flag::AllocFlag,
     prelude::CUBuffer,
-    static_api::static_cuda, buf,
+    static_api::static_cuda, buf, CUDA,
 };
 use glow::*;
+use glutin::event::VirtualKeyCode;
 use nvjpeg_sys::{nvjpegChromaSubsampling_t, nvjpegGetImageInfo};
 
 pub fn check_error(value: u32, msg: &str) {
@@ -21,7 +22,7 @@ pub fn check_error(value: u32, msg: &str) {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
-    Maze,
+    None,
     Labels,
     MouseHighlight
 }
@@ -29,11 +30,22 @@ enum Mode {
 impl Mode {
     fn next(&mut self) {
         let mode = match self {
-            Mode::Maze => Mode::Labels,
+            Mode::None => Mode::Labels,
             Mode::Labels => Mode::MouseHighlight,
-            Mode::MouseHighlight => Mode::Maze,
+            Mode::MouseHighlight => Mode::None,
         };
         *self = mode;
+    }
+}
+
+impl From<u8> for Mode {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Mode::None,
+            1 => Mode::Labels,
+            2 => Mode::MouseHighlight,
+            _ => Mode::None
+        }
     }
 }
 
@@ -319,7 +331,7 @@ pub fn main() {
         // writes data to __constant__ filterData memory
         filter_data_buf.write(&filter.read());*/
 
-        let mut mode = Mode::Maze;
+        let mut mode = Mode::None;
 
         let mut updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
 
@@ -394,78 +406,20 @@ pub fn main() {
                     } => {
                         // switch between views with key press (label values)
                         if input.state == glutin::event::ElementState::Released {
-                            let channels = decoder.channels.as_ref().unwrap();
-                            match input.virtual_keycode.as_ref() {
-                                Some(&glutin::event::VirtualKeyCode::Space) => {
-                                    mode.next();
+                            let channels: &[custos::Buffer<'_, u8, CUDA>; 3] = decoder.channels.as_ref().unwrap();
+                            let Some(keycode) = input.virtual_keycode.as_ref() else {
+                                return;
+                            };
 
-                                    match mode {
-                                        Mode::Maze => {
-                                            interleave_rgb(
-                                                &mut surface,
-                                                &channels[0],
-                                                &channels[1],
-                                                &channels[2],
-                                                width as usize,
-                                                height as usize,
-                                            )
-                                            .unwrap();
-                                            device.stream().sync().unwrap();
-                                        }
-                                        Mode::Labels => {
-                                            let mut labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
-
-
-                                            label_components(
-                                                &mut labels,
-                                                width as usize,
-                                                height as usize,
-                                            )
-                                            .unwrap();
-
-                                            device.stream().sync().unwrap();
-
-                                            updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
-                                            
-                                            for i in 0..width*2 {
-                                                if i % 2 == 0 {
-                                                    compute_labels(
-                                                        &labels,
-                                                        &mut updated_labels,
-                                                        &channels[0],
-                                                        &channels[1],
-                                                        &channels[2],
-                                                        width as usize,
-                                                        height as usize,
-                                                    )
-                                                    .unwrap();
-                                                } else {
-                                                    compute_labels(
-                                                        &updated_labels,
-                                                        &mut labels,
-                                                        &channels[0],
-                                                        &channels[1],
-                                                        &channels[2],
-                                                        width as usize,
-                                                        height as usize,
-                                                    )
-                                                    .unwrap();
-                                                }
-                                                
-                                                device.stream().sync().unwrap();
-                                            }
-                                            
-                                            copy_to_surface(&updated_labels, &mut surface, width as usize, height as usize);
-                                            device.stream().sync().unwrap();
-                                            
-                                            // color_component_at_pixel(&surface_texture, &mut surface, 0, 0, width as usize, height as usize);
-                                            // fill the core f red
-                                            color_component_at_pixel(&surface_texture, &mut surface, 8, 64, width as usize, height as usize);
-
-                                            device.stream().sync().unwrap();
-                                        }
-                                        Mode::MouseHighlight => {},
-                                    }
+                            if (VirtualKeyCode::Key1..VirtualKeyCode::Key0).contains(keycode) {
+                                mode = Mode::from(*keycode as u8);
+                                update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels);
+                            }
+                            
+                            match keycode {
+                                &VirtualKeyCode::Space => {
+                                    mode.next();                            
+                                    update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels);
                                 }
                                 _ => (),
                             }
@@ -476,6 +430,76 @@ pub fn main() {
                 _ => (),
             }
         });
+    }
+}
+
+fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_texture: &mut CUBuffer<u8>, channels: &[CUBuffer<u8>], width: usize, height: usize, device: &CUDA, updated_labels: &mut CUBuffer<u8>) {
+    match mode {
+        Mode::None => {
+            interleave_rgb(
+                surface,
+                &channels[0],
+                &channels[1],
+                &channels[2],
+                width as usize,
+                height as usize,
+            )
+            .unwrap();
+            device.stream().sync().unwrap();
+        }
+        Mode::Labels => {
+            let mut labels = buf![0u8; width * height * 4].to_cuda();
+
+
+            label_components(
+                &mut labels,
+                width,
+                height,
+            )
+            .unwrap();
+
+            device.stream().sync().unwrap();
+
+            *updated_labels = buf![0u8; width * height * 4].to_cuda();
+            
+            for i in 0..width*2 {
+                if i % 2 == 0 {
+                    compute_labels(
+                        &labels,
+                        updated_labels,
+                        &channels[0],
+                        &channels[1],
+                        &channels[2],
+                        width,
+                        height,
+                    )
+                    .unwrap();
+                } else {
+                    compute_labels(
+                        &updated_labels,
+                        &mut labels,
+                        &channels[0],
+                        &channels[1],
+                        &channels[2],
+                        width,
+                        height,
+                    )
+                    .unwrap();
+                }
+                
+                device.stream().sync().unwrap();
+            }
+            
+            copy_to_surface(&updated_labels, surface, width, height);
+            device.stream().sync().unwrap();
+            
+            // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
+            // fill the core f red
+            color_component_at_pixel(&surface_texture, surface, 8, 64, width, height);
+
+            device.stream().sync().unwrap();
+        }
+        Mode::MouseHighlight => {},
     }
 }
 
