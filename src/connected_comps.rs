@@ -40,7 +40,7 @@ pub fn interleave_rgb(
     )
 }
 
-pub fn label_components(
+pub fn label_pixels(
     target: &mut CUBuffer<u8>,
     width: usize,
     height: usize,
@@ -51,12 +51,48 @@ pub fn label_components(
         [32, 8, 1],
         0,
         CUDA_SOURCE,
-        "labelComponents",
+        "labelPixels",
         &[target, &width, &height],
     )
 }
 
-pub fn compute_labels(
+pub fn label_pixels_rowed(
+    target: &mut CUBuffer<u8>,
+    width: usize,
+    height: usize,
+) -> custos::Result<()> {
+    launch_kernel(
+        target.device(),
+        [64, 135, 1],
+        [32, 8, 1],
+        0,
+        CUDA_SOURCE,
+        "labelPixelsRowed",
+        &[target, &width, &height],
+    )
+}
+
+pub fn label_components(
+    input: &CUBuffer<u8>,
+    out: &mut CUBuffer<u8>,
+    red: &CUBuffer<u8>,
+    green: &CUBuffer<u8>,
+    blue: &CUBuffer<u8>,
+    width: usize,
+    height: usize,
+) -> custos::Result<()> {
+    launch_kernel(
+        input.device(),
+        [10, 30, 1],
+        [32, 8, 1],
+        0,
+        CUDA_SOURCE,
+        "labelComponents",
+        &[input, out, &width, &height, red, green, blue],
+    )
+}
+
+pub fn label_components_rowed(
     input: &CUBuffer<u8>,
     out: &mut CUBuffer<u8>,
     red: &CUBuffer<u8>,
@@ -71,7 +107,7 @@ pub fn compute_labels(
         [32, 8, 1],
         0,
         CUDA_SOURCE,
-        "computeLabels",
+        "labelComponentsRowed",
         &[input, out, &width, &height, red, green, blue],
     )
 }
@@ -96,6 +132,18 @@ pub fn color_component_at_pixel(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u
         0,
         CUDA_SOURCE,
         "colorComponentAtPixel",
+        &[&texture, surface, &x, &y, &width, &height],
+    ).unwrap()
+}
+
+pub fn color_component_at_pixel_exact(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, x: usize, y: usize, width: usize, height: usize) {
+    launch_kernel(
+        surface.device(),
+        [10, 30, 1],
+        [32, 8, 1],
+        0,
+        CUDA_SOURCE,
+        "colorComponentAtPixelExact",
         &[&texture, surface, &x, &y, &width, &height],
     ).unwrap()
 }

@@ -4,6 +4,7 @@ mod utils;
 
 use std::{mem::size_of, ptr::null, time::Instant};
 
+use connected_comps::{label_pixels_rowed, label_components_rowed};
 use custos::{
     cuda::{api::CUstream, CUDAPtr},
     flag::AllocFlag,
@@ -24,7 +25,8 @@ pub fn check_error(value: u32, msg: &str) {
 enum Mode {
     None,
     Labels,
-    MouseHighlight
+    MouseHighlight,
+    RowWise
 }
 
 impl Mode {
@@ -32,7 +34,8 @@ impl Mode {
         let mode = match self {
             Mode::None => Mode::Labels,
             Mode::Labels => Mode::MouseHighlight,
-            Mode::MouseHighlight => Mode::None,
+            Mode::MouseHighlight => Mode::RowWise,
+            Mode::RowWise => Mode::None
         };
         *self = mode;
     }
@@ -44,6 +47,7 @@ impl From<u8> for Mode {
             0 => Mode::None,
             1 => Mode::Labels,
             2 => Mode::MouseHighlight,
+            3 => Mode::RowWise,
             _ => Mode::None
         }
     }
@@ -392,10 +396,10 @@ pub fn main() {
 
                         if mode == Mode::MouseHighlight {
                             copy_to_surface(&updated_labels, &mut surface, width as usize, height as usize);
-                            // device.stream().sync().unwrap();
+                            device.stream().sync().unwrap();
 
-                            color_component_at_pixel(&surface_texture, &mut surface, cursor_loc.0, cursor_loc.1, width as usize, height as usize);
-                            //device.stream().sync().unwrap();
+                            color_component_at_pixel_exact(&surface_texture, &mut surface, cursor_loc.0, cursor_loc.1, width as usize, height as usize);
+                            device.stream().sync().unwrap();
                         }
                         
                     }
@@ -450,8 +454,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
         Mode::Labels => {
             let mut labels = buf![0u8; width * height * 4].to_cuda();
 
-
-            label_components(
+            label_pixels(
                 &mut labels,
                 width,
                 height,
@@ -464,7 +467,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
             
             for i in 0..width*2 {
                 if i % 2 == 0 {
-                    compute_labels(
+                    label_components(
                         &labels,
                         updated_labels,
                         &channels[0],
@@ -475,7 +478,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                     )
                     .unwrap();
                 } else {
-                    compute_labels(
+                    label_components(
                         &updated_labels,
                         &mut labels,
                         &channels[0],
@@ -500,6 +503,48 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
             device.stream().sync().unwrap();
         }
         Mode::MouseHighlight => {},
+        Mode::RowWise => {
+            let mut labels = buf![0u8; width * height * 4].to_cuda();
+            
+            label_pixels_rowed(
+                &mut labels,
+                width,
+                height,
+            )
+            .unwrap();
+
+            device.stream().sync().unwrap();
+            *updated_labels = buf![0u8; width * height * 4].to_cuda();
+            
+            for i in 0..width*2 {
+                if i % 2 == 0 {
+                    label_components(
+                        &labels,
+                        updated_labels,
+                        &channels[0],
+                        &channels[1],
+                        &channels[2],
+                        width,
+                        height,
+                    )
+                    .unwrap();
+                } else {
+                    label_components(
+                        &updated_labels,
+                        &mut labels,
+                        &channels[0],
+                        &channels[1],
+                        &channels[2],
+                        width,
+                        height,
+                    )
+                    .unwrap();
+                }
+            }
+            device.stream().sync().unwrap();
+            copy_to_surface(&labels, surface, width, height);
+
+        }
     }
 }
 
@@ -528,7 +573,7 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::connected_comps::{compute_labels, fill_cuda_surface, interleave_rgb, label_components, copy_to_surface, color_component_at_pixel};
+use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 
