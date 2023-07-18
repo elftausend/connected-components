@@ -136,7 +136,7 @@ pub fn main() {
         let mut heights = [0, 0, 0];
 
         // let raw_data = std::fs::read("./maze_128x128.jpg").unwrap();
-        let raw_data = std::fs::read("./text.jpg").unwrap();
+        let raw_data = std::fs::read("./maze.jpg").unwrap();
 
         let status = nvjpegGetImageInfo(
             decoder.handle,
@@ -149,7 +149,8 @@ pub fn main() {
         );
 
         let width = widths[0];
-        let height = 128; // 1080
+        
+        let height = heights[1]; // 1080
 
         println!("width: {}, height: {}", width, height);
 
@@ -409,8 +410,8 @@ pub fn main() {
                         is_synthetic,
                     } => {
                         // switch between views with key press (label values)
-                        if input.state == glutin::event::ElementState::Released {
-                            let channels: &[custos::Buffer<'_, u8, CUDA>; 3] = decoder.channels.as_ref().unwrap();
+                        let channels: &[custos::Buffer<'_, u8, CUDA>; 3] = decoder.channels.as_ref().unwrap();
+                        if input.state == glutin::event::ElementState::Pressed {
                             let Some(keycode) = input.virtual_keycode.as_ref() else {
                                 return;
                             };
@@ -454,7 +455,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
         Mode::Labels => {
             let mut labels = buf![0u8; width * height * 4].to_cuda();
 
-            label_pixels(
+            label_pixels_combinations(
                 &mut labels,
                 width,
                 height,
@@ -465,7 +466,8 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
 
             *updated_labels = buf![0u8; width * height * 4].to_cuda();
             
-            for i in 0..width*2 {
+            let start = Instant::now();
+            for i in 0..width+height {
                 if i % 2 == 0 {
                     label_components(
                         &labels,
@@ -492,6 +494,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                 
                 device.stream().sync().unwrap();
             }
+            println!("labeling took {:?}", start.elapsed());
             
             copy_to_surface(&updated_labels, surface, width, height);
             device.stream().sync().unwrap();
@@ -573,7 +576,7 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact};
+use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact, label_pixels_combinations};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 

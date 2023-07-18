@@ -34,12 +34,35 @@ extern "C"{
         }
 
         float normX = (float) x / (float) width;
-        int colorX = (unsigned char) (normX * 255.0f);
+        unsigned char colorX = (unsigned char) (normX * 255.0f);
 
         float normY = (float) y / (float) height;
-        int colorY = (unsigned char) (normY * 255.0f);
+        unsigned char colorY = (unsigned char) (normY * 255.0f);
 
-        uchar4 color = make_uchar4(colorX, colorY, 0, 255);
+        // float normZ = (float) (x + y) / (float) (width + height);
+        // int colorZ = (unsigned char) (normZ * 255.0f);
+        unsigned char colorZ = 0;
+
+        uchar4 color = make_uchar4(colorX, colorY, colorZ, 255);
+
+        target[y * width + x] = color;
+
+        //surf2Dwrite(color, target, x * sizeof(uchar4), height -1 - y);
+    }
+
+    __global__ void labelPixelsCombinations(uchar4* target, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+    
+        if (!(x < width && y < height)) {
+            return;
+        }
+
+        unsigned char colorZ = (unsigned char) (x * y) / (255 * 255);
+        if (colorZ != 0) {
+            printf("colorZ: %d\n", colorZ);
+        }
+        uchar4 color = make_uchar4(x, y, colorZ, 255);
 
         target[y * width + x] = color;
 
@@ -80,7 +103,7 @@ extern "C"{
         unsigned char valG = G[y * width + x]; 
         unsigned char valB = B[y * width + x]; 
 
-        int threshold = 30;
+        int threshold = 20;
         uchar4 currentLabel = input[y * width + x];
 
         if (x+1 < width) {
@@ -91,7 +114,7 @@ extern "C"{
             
             if (abs(valRedRight - valR) < threshold && abs(valGreenRight - valG) < threshold && abs(valBlueRight - valB) < threshold) {
                 
-                if ((int) currentLabel.x + (int) currentLabel.y < (int) labelRight.x + (int) labelRight.y) {
+                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelRight.x + (int) labelRight.y + (int) labelRight.z) {
                     if (blockIdx.y == 0) {
                         // printf("label right: %d %d %d\n", labelRight.x, labelRight.y, labelRight.z);
                     }
@@ -110,7 +133,7 @@ extern "C"{
             uchar4 labelRight = input[y * width + x - 1];
             if (abs(valRedRight - valR) < threshold && abs(valGreenRight - valG) < threshold && abs(valBlueRight - valB) < threshold) {
                 
-                if ((int) currentLabel.x + (int) currentLabel.y < (int) labelRight.x + (int) labelRight.y) {
+                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelRight.x + (int) labelRight.y + (int) labelRight.z) {
                     out[y * width + x] = labelRight;
                     return;
                 }
@@ -123,8 +146,7 @@ extern "C"{
             unsigned char valBlueBottom = B[(y+1) * width + x];
             uchar4 labelBottom = input[(y+1) * width + x];
             if (abs(valRedBottom - valR) < threshold && abs(valGreenBottom - valG) < threshold && abs(valBlueBottom - valB) < threshold) {
-                if ((int) currentLabel.x + (int) currentLabel.y < (int) labelBottom.x + (int) labelBottom.y) {
-                    out[y * width + x] = labelBottom;
+                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelBottom.x + (int) labelBottom.y + (int) labelBottom.z) {                    out[y * width + x] = labelBottom;
                     return;
                 }
             }
@@ -135,7 +157,7 @@ extern "C"{
             unsigned char valBlueBottom = B[(y-1) * width + x];
             uchar4 labelBottom = input[(y-1) * width + x];
             if (abs(valRedBottom - valR) < threshold && abs(valGreenBottom - valG) < threshold && abs(valBlueBottom - valB) < threshold) {
-                if ((int) currentLabel.x + (int) currentLabel.y < (int) labelBottom.x + (int) labelBottom.y) {
+                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelBottom.x + (int) labelBottom.y + (int) labelBottom.z) {                    out[y * width + x] = labelBottom;
                     out[y * width + x] = labelBottom;
                     return;
                 }
@@ -172,8 +194,7 @@ extern "C"{
             uchar4 labelRight = input[y * width + x + 1];
             
             if (abs(valRedRight - valR) < threshold && abs(valGreenRight - valG) < threshold && abs(valBlueRight - valB) < threshold) {
-                
-                if ((int) currentLabel.x + (int) currentLabel.y < (int) labelRight.x + (int) labelRight.y) {
+                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelRight.x + (int) labelRight.y + (int) labelRight.z) {
                     out[y * width + x] = labelRight;
                     return;
                 }
@@ -186,7 +207,7 @@ extern "C"{
             unsigned char valBlueBottom = B[(y+1) * width + x];
             uchar4 labelBottom = input[(y+1) * width + x];
             if (abs(valRedBottom - valR) < threshold && abs(valGreenBottom - valG) < threshold && abs(valBlueBottom - valB) < threshold) {
-                if ((int) currentLabel.x + (int) currentLabel.y < (int) labelBottom.x + (int) labelBottom.y) {
+                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelBottom.x + (int) labelBottom.y + (int) labelBottom.z) {
                     out[y * width + x] = labelBottom;
                     return;
                 }
@@ -234,10 +255,10 @@ extern "C"{
         // uchar4 label = surf2Dread<uchar4>(surface, x * sizeof(uchar4), height -1 - y);
         float4 label = tex2D<float4>(texture, x, height -1 - y);
 
-        float threshold = 0.001; // 0.019
+        float threshold = 0.019; // 0.019
 
         // mind that z is not used
-        if (abs(toSearchLabel.x - label.x) < threshold && abs(toSearchLabel.y - label.y) < threshold) {
+        if (abs(toSearchLabel.x - label.x) < threshold && abs(toSearchLabel.y - label.y) < threshold && abs(toSearchLabel.z - label.z) < threshold) {
             uchar4 color = make_uchar4(0, 0, 255, 255);
             surf2Dwrite(color, surface, x * sizeof(uchar4), height -1 - y);
         }
@@ -270,8 +291,6 @@ extern "C"{
             uchar4 color = make_uchar4(0, 0, 255, 255);
             surf2Dwrite(color, surface, x * sizeof(uchar4), height -1 - y);
         }
-
-        __syncthreads();
 
     }
 }

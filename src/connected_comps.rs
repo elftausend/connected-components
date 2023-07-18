@@ -56,6 +56,22 @@ pub fn label_pixels(
     )
 }
 
+pub fn label_pixels_combinations(
+    target: &mut CUBuffer<u8>,
+    width: usize,
+    height: usize,
+) -> custos::Result<()> {
+    launch_kernel(
+        target.device(),
+        [64, 135, 1],
+        [32, 8, 1],
+        0,
+        CUDA_SOURCE,
+        "labelPixelsCombinations",
+        &[target, &width, &height],
+    )
+}
+
 pub fn label_pixels_rowed(
     target: &mut CUBuffer<u8>,
     width: usize,
@@ -83,7 +99,7 @@ pub fn label_components(
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
-        [10, 30, 1],
+        [64, 135, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,
@@ -139,7 +155,7 @@ pub fn color_component_at_pixel(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u
 pub fn color_component_at_pixel_exact(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, x: usize, y: usize, width: usize, height: usize) {
     launch_kernel(
         surface.device(),
-        [10, 30, 1],
+        [64, 135, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,
