@@ -86,7 +86,7 @@ extern "C"{
         target[y * width + x] = color;
     }
 
-    __global__ void labelComponents(uchar4* input, uchar4* out, int width, int height, unsigned char *R, unsigned char *G, unsigned char *B) {
+    __global__ void labelComponents(uchar4* input, uchar4* out, int width, int height, unsigned char *R, unsigned char *G, unsigned char *B, int threshold) {
         int x = blockIdx.x * blockDim.x + threadIdx.x;
         int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -104,7 +104,6 @@ extern "C"{
         unsigned char valG = G[y * width + x]; 
         unsigned char valB = B[y * width + x]; 
 
-        int threshold = 20;
         uchar4 currentLabel = input[y * width + x];
 
         if (x+1 < width) {

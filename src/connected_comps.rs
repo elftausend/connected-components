@@ -96,6 +96,7 @@ pub fn label_components(
     blue: &CUBuffer<u8>,
     width: usize,
     height: usize,
+    threshold: i32,
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
@@ -104,7 +105,7 @@ pub fn label_components(
         0,
         CUDA_SOURCE,
         "labelComponents",
-        &[input, out, &width, &height, red, green, blue],
+        &[input, out, &width, &height, red, green, blue, &threshold],
     )
 }
 

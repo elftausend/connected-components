@@ -349,6 +349,8 @@ pub fn main() {
         let mut mode = Mode::None;
 
         let mut updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
+        
+        let mut threshold = 20;
 
         event_loop.run(move |event, _, control_flow| {
             match event {
@@ -405,8 +407,8 @@ pub fn main() {
                         let (x, y) = ((x / win_width as f32) * width as f32, (y / win_height as f32) * height as f32);
                         let cursor_loc = (x as usize, y as usize);
 
-                        let pixel = read_pixel(&surface, cursor_loc.0, cursor_loc.1, width as usize, height as usize);
-                        println!("pixel: {pixel:?}");
+                        let pixel = read_pixel(&updated_labels, cursor_loc.0, cursor_loc.1, width as usize, height as usize);
+                        println!("pixel (label): {pixel:?}");
 
                         if mode == Mode::MouseHighlight {
                             copy_to_surface(&updated_labels, &mut surface, width as usize, height as usize);
@@ -429,15 +431,31 @@ pub fn main() {
                                 return;
                             };
 
+                            if keycode == &VirtualKeyCode::Escape {
+                                gl.delete_program(program);
+                                gl.delete_vertex_array(vertex_array);
+                                *control_flow = ControlFlow::Exit
+                            }
+
+                            if keycode == &VirtualKeyCode::Plus {
+                                threshold += 1;
+                                update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels, threshold);
+                            }
+
+                            if keycode == &VirtualKeyCode::Minus {
+                                threshold -= 1;
+                                update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels, threshold);
+                            }
+
                             if (VirtualKeyCode::Key1..VirtualKeyCode::Key0).contains(keycode) {
                                 mode = Mode::from(*keycode as u8);
-                                update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels);
+                                update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels, threshold);
                             }
                             
                             match keycode {
                                 &VirtualKeyCode::Space => {
                                     mode.next();                            
-                                    update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels);
+                                    update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels, threshold);
                                 }
                                 _ => (),
                             }
@@ -451,7 +469,7 @@ pub fn main() {
     }
 }
 
-fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_texture: &mut CUBuffer<u8>, channels: &[CUBuffer<u8>], width: usize, height: usize, device: &CUDA, updated_labels: &mut CUBuffer<u8>) {
+fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_texture: &mut CUBuffer<u8>, channels: &[CUBuffer<u8>], width: usize, height: usize, device: &CUDA, updated_labels: &mut CUBuffer<u8>, threshold: i32) {
     match mode {
         Mode::None => {
             interleave_rgb(
@@ -481,7 +499,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
             *updated_labels = labels.clone(); // only for mouse pos debug
             
             let start = Instant::now();
-            for i in 0..(width + height)*10 { // 0..width+height
+            for i in 0..width+height*2 { // 0..width+height
                 if i % 2 == 0 {
                     label_components(
                         &labels,
@@ -491,6 +509,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         &channels[2],
                         width,
                         height,
+                        threshold
                     )
                     .unwrap();
                 } else {
@@ -502,6 +521,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         &channels[2],
                         width,
                         height,
+                        threshold
                     )
                     .unwrap();
                 }
@@ -543,6 +563,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         &channels[2],
                         width,
                         height,
+                        threshold
                     )
                     .unwrap();
                 } else {
@@ -554,6 +575,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         &channels[2],
                         width,
                         height,
+                        threshold
                     )
                     .unwrap();
                 }
