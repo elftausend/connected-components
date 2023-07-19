@@ -4,6 +4,7 @@ mod utils;
 
 use std::{mem::size_of, ptr::null, time::Instant};
 
+use clap::{command, Parser, arg};
 use connected_comps::{label_pixels_rowed, label_components_rowed};
 use custos::{
     cuda::{api::CUstream, CUDAPtr},
@@ -53,7 +54,16 @@ impl From<u8> for Mode {
     }
 }
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+pub struct Args {
+    #[arg(short, long, default_value = "./maze.jpg")]
+    image_path: String,
+}
+
 pub fn main() {
+    // print current directory at start
+    let args = Args::parse();
     let device = static_cuda();
     unsafe {
         let (gl, shader_version, window, event_loop) = {
@@ -136,7 +146,7 @@ pub fn main() {
         let mut heights = [0, 0, 0];
 
         // let raw_data = std::fs::read("./maze_128x128.jpg").unwrap();
-        let raw_data = std::fs::read("./maze.jpg").unwrap();
+        let raw_data = std::fs::read(args.image_path).unwrap();
 
         let status = nvjpegGetImageInfo(
             decoder.handle,
@@ -369,11 +379,11 @@ pub fn main() {
                     gl.use_program(None);
 
                     if count == 1000 {
-                        println!(
+                        /*println!(
                             "single frame: {}ms, fps: {}",
                             frame_time.elapsed().as_millis(),
                             1. / frame_time.elapsed().as_secs_f32()
-                        );
+                        );*/
                         count = 0
                     }
 
@@ -395,11 +405,14 @@ pub fn main() {
                         let (x, y) = ((x / win_width as f32) * width as f32, (y / win_height as f32) * height as f32);
                         let cursor_loc = (x as usize, y as usize);
 
+                        let pixel = read_pixel(&surface, cursor_loc.0, cursor_loc.1, width as usize, height as usize);
+                        println!("pixel: {pixel:?}");
+
                         if mode == Mode::MouseHighlight {
                             copy_to_surface(&updated_labels, &mut surface, width as usize, height as usize);
                             device.stream().sync().unwrap();
 
-                            color_component_at_pixel_exact(&surface_texture, &mut surface, cursor_loc.0, cursor_loc.1, width as usize, height as usize);
+                            color_component_at_pixel_exact(&surface_texture, &mut surface, cursor_loc.0, cursor_loc.1, width as usize, height as usize, pixel.0, pixel.1, pixel.2);
                             device.stream().sync().unwrap();
                         }
                         
@@ -464,10 +477,11 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
 
             device.stream().sync().unwrap();
 
-            *updated_labels = buf![0u8; width * height * 4].to_cuda();
+            // *updated_labels = buf![0u8; width * height * 4].to_cuda();
+            *updated_labels = labels.clone(); // only for mouse pos debug
             
             let start = Instant::now();
-            for i in 0..width+height {
+            for i in 0..(width + height)*10 { // 0..width+height
                 if i % 2 == 0 {
                     label_components(
                         &labels,
@@ -496,12 +510,12 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
             }
             println!("labeling took {:?}", start.elapsed());
             
-            copy_to_surface(&updated_labels, surface, width, height);
+            copy_to_surface(&labels, surface, width, height);
             device.stream().sync().unwrap();
             
             // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
             // fill the core f red
-            color_component_at_pixel(&surface_texture, surface, 8, 64, width, height);
+            // color_component_at_pixel_exact(&surface_texture, surface, 8, 64, width, height);
 
             device.stream().sync().unwrap();
         }
@@ -576,7 +590,7 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact, label_pixels_combinations};
+use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact, label_pixels_combinations, read_pixel};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 

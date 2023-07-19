@@ -11,3 +11,4 @@ glutin = "0.28"
 custos = { path = "../custos", default-features=false, features=["cuda", "static-api"] }
 nvjpeg-sys = { path = "../nvjpeg-rs/nvjpeg-sys" }
 cuda-driver-sys = "0.3.0"
+clap = { version = "4.3", features = ["derive"] }

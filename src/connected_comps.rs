@@ -152,7 +152,7 @@ pub fn color_component_at_pixel(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u
     ).unwrap()
 }
 
-pub fn color_component_at_pixel_exact(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, x: usize, y: usize, width: usize, height: usize) {
+pub fn color_component_at_pixel_exact(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, x: usize, y: usize, width: usize, height: usize, r: u8, g: u8, b: u8) {
     launch_kernel(
         surface.device(),
         [64, 135, 1],
@@ -160,6 +160,23 @@ pub fn color_component_at_pixel_exact(texture: &CUBuffer<u8>, surface: &mut CUBu
         0,
         CUDA_SOURCE,
         "colorComponentAtPixelExact",
-        &[&texture, surface, &x, &y, &width, &height],
+        &[&texture, surface, &x, &y, &width, &height, &r, &g, &b],
     ).unwrap()
+}
+
+pub fn read_pixel(surface: &CUBuffer<u8>, x: usize, y: usize, width: usize, height: usize) -> (u8, u8, u8) {
+    let mut r = CUBuffer::<u8>::new(surface.device(), 1);
+    let mut g = CUBuffer::<u8>::new(surface.device(), 1);
+    let mut b = CUBuffer::<u8>::new(surface.device(), 1);
+    launch_kernel(
+        surface.device(),
+        [1, 1, 1],
+        [1, 1, 1],
+        0,
+        CUDA_SOURCE,
+        "readPixelValue",
+        &[&surface, &x, &y, &mut r, &mut g, &mut b, &width, &height],
+    ).unwrap();
+
+    (r.read()[0], g.read()[0], b.read()[0])
 }

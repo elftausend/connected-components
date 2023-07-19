@@ -58,11 +58,12 @@ extern "C"{
             return;
         }
 
-        unsigned char colorZ = (unsigned char) (x * y) / (255 * 255);
-        if (colorZ != 0) {
-            printf("colorZ: %d\n", colorZ);
-        }
-        uchar4 color = make_uchar4(x, y, colorZ, 255);
+        // unsigned char colorZ = (unsigned char) (x + y) / (255*255);
+
+        unsigned char colorZ = x / 255 + (y / 255) * ((width) / 255) + (y / 255);
+
+        uchar4 color = make_uchar4(x % 255, y % 255, colorZ, 255);
+        // printf("color: %d %d %d\n", color.x, color.y, color.z);
 
         target[y * width + x] = color;
 
@@ -118,6 +119,7 @@ extern "C"{
                     if (blockIdx.y == 0) {
                         // printf("label right: %d %d %d\n", labelRight.x, labelRight.y, labelRight.z);
                     }
+                    // currentLabel = labelRight;
                     out[y * width + x] = labelRight;
                     //surf2Dwrite(labelRight, out, x * sizeof(char4), height -1 - y);
                     return;
@@ -134,6 +136,7 @@ extern "C"{
             if (abs(valRedRight - valR) < threshold && abs(valGreenRight - valG) < threshold && abs(valBlueRight - valB) < threshold) {
                 
                 if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelRight.x + (int) labelRight.y + (int) labelRight.z) {
+                    // currentLabel = labelRight;
                     out[y * width + x] = labelRight;
                     return;
                 }
@@ -146,7 +149,9 @@ extern "C"{
             unsigned char valBlueBottom = B[(y+1) * width + x];
             uchar4 labelBottom = input[(y+1) * width + x];
             if (abs(valRedBottom - valR) < threshold && abs(valGreenBottom - valG) < threshold && abs(valBlueBottom - valB) < threshold) {
-                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelBottom.x + (int) labelBottom.y + (int) labelBottom.z) {                    out[y * width + x] = labelBottom;
+                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelBottom.x + (int) labelBottom.y + (int) labelBottom.z) {
+                    // currentLabel = labelBottom;
+                    out[y * width + x] = labelBottom;
                     return;
                 }
             }
@@ -157,7 +162,8 @@ extern "C"{
             unsigned char valBlueBottom = B[(y-1) * width + x];
             uchar4 labelBottom = input[(y-1) * width + x];
             if (abs(valRedBottom - valR) < threshold && abs(valGreenBottom - valG) < threshold && abs(valBlueBottom - valB) < threshold) {
-                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelBottom.x + (int) labelBottom.y + (int) labelBottom.z) {                    out[y * width + x] = labelBottom;
+                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelBottom.x + (int) labelBottom.y + (int) labelBottom.z) {
+                    // currentLabel = labelBottom;
                     out[y * width + x] = labelBottom;
                     return;
                 }
@@ -266,16 +272,13 @@ extern "C"{
 
     }
 
-    __global__ void colorComponentAtPixelExact(cudaTextureObject_t texture, cudaSurfaceObject_t surface, int posX, int posY, int width, int height) {
+    __global__ void colorComponentAtPixelExact(cudaTextureObject_t texture, cudaSurfaceObject_t surface, int posX, int posY, int width, int height, unsigned char R, unsigned char G, unsigned char B) {
+        if (R == 0 && G == 0 && B == 255) {
+            return;
+        }
+        
         int x = blockIdx.x * blockDim.x + threadIdx.x;
         int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-        __shared__ uchar4 toSearchLabel;
-        if (threadIdx.x == 0) {
-            toSearchLabel = tex2D<uchar4>(texture, posX, height -1 - posY);
-
-        }
-        __syncthreads();
 
         if (x >= width) {
             return;
@@ -284,13 +287,43 @@ extern "C"{
         if (y >= height) {
             return;
         }
-        
-        uchar4 label = tex2D<uchar4>(texture, x, height -1 - y);
+
+        uchar4 toSearchLabel = make_uchar4(R, G, B, 255);
+        /*__shared__ uchar4 toSearchLabel;
+        if (threadIdx.x == 0) {
+            toSearchLabel = surf2Dread<uchar4>(surface, posX * sizeof(uchar4), height -1 - posY);
+            // toSearchLabel = tex2D<uchar4>(texture, posX, posY);
+
+        }
+        __syncthreads();*/
+
+
+        // uchar4 label = tex2D<uchar4>(texture, x, y);
+        uchar4 label = surf2Dread<uchar4>(surface, x * sizeof(uchar4), height -1 - y);
+
 
         if (toSearchLabel.x == label.x && toSearchLabel.y == label.y && toSearchLabel.z == label.z) {
             uchar4 color = make_uchar4(0, 0, 255, 255);
             surf2Dwrite(color, surface, x * sizeof(uchar4), height -1 - y);
         }
 
+    }
+
+    __global__ void readPixelValue(uchar4* labels, int posX, int posY, unsigned char* R, unsigned char* G, unsigned char* B, int width, int height) {
+
+        if (posX >= width) {
+            return;
+        }
+
+        if (posY >= height) {
+            return;
+        }
+
+        // uchar4 pixel = tex2D<uchar4>(texture, posX, posY);
+        // uchar4 pixel = surf2Dread<uchar4>(surface, posX * sizeof(uchar4), height -1 -posY);
+        uchar4 pixel = labels[posY * width + posX];
+        R[0] = pixel.x;
+        G[0] = pixel.y;
+        B[0] = pixel.z;
     }
 }
