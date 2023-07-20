@@ -86,7 +86,122 @@ extern "C"{
         target[y * width + x] = color;
     }
 
-    __global__ void labelComponents(uchar4* input, uchar4* out, int width, int height, unsigned char *R, unsigned char *G, unsigned char *B, int threshold) {
+    __global__ void labelComponentsMasterLabel(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, unsigned char* hasUpdated) {
+        int x = blockIdx.x * blockDim.x + threadIdx.x;
+        int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (x >= width) {
+            return;
+        }
+        
+        if (y >= height) {
+            return;
+        }
+
+        unsigned char valR = R[y * width + x]; 
+        unsigned char valG = G[y * width + x]; 
+        unsigned char valB = B[y * width + x]; 
+
+        uchar4 currentLabel = input[y * width + x];
+    
+        // find most right "master" label
+
+        
+        bool hasMaster = false;
+        uchar4 masterLabel;
+        for (int i = x + 1; i < width; i++) {
+            unsigned char valRedRight = R[y * width + i];
+            unsigned char valGreenRight = G[y * width + i];
+            unsigned char valBlueRight = B[y * width + i];
+            uchar4 labelRight = input[y * width + i];
+            
+            if (!(abs(valRedRight - valR) < threshold && abs(valGreenRight - valG) < threshold && abs(valBlueRight - valB) < threshold)) {            
+                break;
+            }
+
+            if (((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelRight.x + (int) labelRight.y + (int) labelRight.z)) {
+                masterLabel = labelRight;
+                hasMaster = true;
+            }
+        }
+
+        if (hasMaster) {
+            out[y * width + x] = masterLabel;
+            hasUpdated[0] = 1;
+            return;
+        }
+    
+        for (int i = x - 1; i >= 0; i--) {
+            unsigned char valRedLeft = R[y * width + i];
+            unsigned char valGreenLeft = G[y * width + i];
+            unsigned char valBlueLeft = B[y * width + i];
+            uchar4 labelLeft = input[y * width + i];
+            
+            if (!(abs(valRedLeft - valR) < threshold && abs(valGreenLeft - valG) < threshold && abs(valBlueLeft - valB) < threshold)) {
+                break;
+            }
+            
+            if (((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelLeft.x + (int) labelLeft.y + (int) labelLeft.z)) {
+                masterLabel = labelLeft;
+                hasMaster = true;
+            }            
+        }
+
+        if (hasMaster) {
+            out[y * width + x] = masterLabel;
+            hasUpdated[0] = 1;
+            return;
+        }
+
+        for (int i = y + 1; i < height; i++) {
+            unsigned char valRedDown = R[i * width + x];
+            unsigned char valGreenDown = G[i * width + x];
+            unsigned char valBlueDown = B[i * width + x];
+            uchar4 labelDown = input[i * width + x];
+            
+            if (!(abs(valRedDown - valR) < threshold && abs(valGreenDown - valG) < threshold && abs(valBlueDown - valB) < threshold)) {
+                break;
+            }
+
+            if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelDown.x + (int) labelDown.y + (int) labelDown.z) {
+                masterLabel = labelDown;
+                hasMaster = true;
+            }
+        }
+
+        if (hasMaster) {
+            out[y * width + x] = masterLabel;
+            hasUpdated[0] = 1;
+            return;
+        }
+
+        for (int i = y - 1; i >= 0; i--) {
+            unsigned char valRedUp = R[i * width + x];
+            unsigned char valGreenUp = G[i * width + x];
+            unsigned char valBlueUp = B[i * width + x];
+            uchar4 labelUp = input[i * width + x];
+            
+            if (!(abs(valRedUp - valR) < threshold && abs(valGreenUp - valG) < threshold && abs(valBlueUp - valB) < threshold)) {
+                break;
+            }
+
+            if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelUp.x + (int) labelUp.y + (int) labelUp.z) {
+                masterLabel = labelUp;
+                hasMaster = true;
+            }
+        }
+
+        if (hasMaster) {
+            out[y * width + x] = masterLabel;
+            hasUpdated[0] = 1;
+            return;
+        }    
+
+        out[y * width + x] = currentLabel;
+    
+    }
+    
+    __global__ void labelComponents(uchar4* input, uchar4* out, int width, int height, unsigned char *R, unsigned char *G, unsigned char *B, int threshold, unsigned char* hasUpdated) {
         int x = blockIdx.x * blockDim.x + threadIdx.x;
         int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -119,6 +234,8 @@ extern "C"{
                         // printf("label right: %d %d %d\n", labelRight.x, labelRight.y, labelRight.z);
                     }
                     // currentLabel = labelRight;
+
+                    hasUpdated[0] = 1;
                     out[y * width + x] = labelRight;
                     //surf2Dwrite(labelRight, out, x * sizeof(char4), height -1 - y);
                     return;
@@ -136,6 +253,7 @@ extern "C"{
                 
                 if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelRight.x + (int) labelRight.y + (int) labelRight.z) {
                     // currentLabel = labelRight;
+                    hasUpdated[0] = 1;
                     out[y * width + x] = labelRight;
                     return;
                 }
@@ -150,6 +268,7 @@ extern "C"{
             if (abs(valRedBottom - valR) < threshold && abs(valGreenBottom - valG) < threshold && abs(valBlueBottom - valB) < threshold) {
                 if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelBottom.x + (int) labelBottom.y + (int) labelBottom.z) {
                     // currentLabel = labelBottom;
+                    hasUpdated[0] = 1;
                     out[y * width + x] = labelBottom;
                     return;
                 }
@@ -163,6 +282,7 @@ extern "C"{
             if (abs(valRedBottom - valR) < threshold && abs(valGreenBottom - valG) < threshold && abs(valBlueBottom - valB) < threshold) {
                 if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) labelBottom.x + (int) labelBottom.y + (int) labelBottom.z) {
                     // currentLabel = labelBottom;
+                    hasUpdated[0] = 1;
                     out[y * width + x] = labelBottom;
                     return;
                 }

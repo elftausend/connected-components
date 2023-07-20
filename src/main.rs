@@ -408,7 +408,7 @@ pub fn main() {
                         let cursor_loc = (x as usize, y as usize);
 
                         let pixel = read_pixel(&updated_labels, cursor_loc.0, cursor_loc.1, width as usize, height as usize);
-                        println!("pixel (label): {pixel:?}");
+                        // println!("pixel (label): {pixel:?}");
 
                         if mode == Mode::MouseHighlight {
                             copy_to_surface(&updated_labels, &mut surface, width as usize, height as usize);
@@ -484,7 +484,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
             device.stream().sync().unwrap();
         }
         Mode::Labels => {
-            let mut labels = buf![0u8; width * height * 4].to_cuda();
+            let mut labels: custos::Buffer<'_, u8, CUDA> = buf![0u8; width * height * 4].to_cuda();
 
             label_pixels_combinations(
                 &mut labels,
@@ -495,13 +495,19 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
 
             device.stream().sync().unwrap();
 
-            // *updated_labels = buf![0u8; width * height * 4].to_cuda();
-            *updated_labels = labels.clone(); // only for mouse pos debug
+            *updated_labels = buf![0u8; width * height * 4].to_cuda();
+            // *updated_labels = labels.clone(); // only for mouse pos debug
+
+            let mut has_updated: custos::Buffer<'_, u8, CUDA> = CUBuffer::<u8>::new(device, 1);
             
             let start = Instant::now();
-            for i in 0..width+height*2 { // 0..width+height
+            for i in 0..width*height { // 0..width+height
+                let mut start = Instant::now();
+                if i == 1 {
+                    start = Instant::now();
+                }
                 if i % 2 == 0 {
-                    label_components(
+                    label_components_master_label(
                         &labels,
                         updated_labels,
                         &channels[0],
@@ -509,11 +515,12 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         &channels[2],
                         width,
                         height,
-                        threshold
+                        threshold,
+                        &mut has_updated
                     )
                     .unwrap();
                 } else {
-                    label_components(
+                    label_components_master_label(
                         &updated_labels,
                         &mut labels,
                         &channels[0],
@@ -521,12 +528,23 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         &channels[2],
                         width,
                         height,
-                        threshold
+                        threshold,
+                        &mut has_updated
                     )
                     .unwrap();
                 }
                 
                 device.stream().sync().unwrap();
+                if i == 1 {
+                    println!("one iter of labeling took {:?}", start.elapsed());
+                }
+
+                if has_updated.read()[0] == 0 {
+                    println!("iters: {i}");
+                    break;
+                }
+
+                has_updated.clear();
             }
             println!("labeling took {:?}", start.elapsed());
             
@@ -552,7 +570,9 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
 
             device.stream().sync().unwrap();
             *updated_labels = buf![0u8; width * height * 4].to_cuda();
-            
+
+            let mut has_updated: custos::Buffer<'_, u8, CUDA> = CUBuffer::<u8>::new(device, 1);
+
             for i in 0..width*2 {
                 if i % 2 == 0 {
                     label_components(
@@ -563,7 +583,8 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         &channels[2],
                         width,
                         height,
-                        threshold
+                        threshold,
+                        &mut has_updated
                     )
                     .unwrap();
                 } else {
@@ -575,10 +596,12 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         &channels[2],
                         width,
                         height,
-                        threshold
+                        threshold,
+                        &mut has_updated
                     )
                     .unwrap();
                 }
+                has_updated.clear();
             }
             device.stream().sync().unwrap();
             copy_to_surface(&labels, surface, width, height);
@@ -612,7 +635,7 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact, label_pixels_combinations, read_pixel};
+use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact, label_pixels_combinations, read_pixel, label_components_master_label};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 
