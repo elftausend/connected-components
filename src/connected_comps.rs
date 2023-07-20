@@ -110,6 +110,30 @@ pub fn label_components(
     )
 }
 
+pub fn label_components_shared(
+    input: &CUBuffer<u8>,
+    out: &mut CUBuffer<u8>,
+    red: &CUBuffer<u8>,
+    green: &CUBuffer<u8>,
+    blue: &CUBuffer<u8>,
+    width: usize,
+    height: usize,
+    threshold: i32,
+    has_updated: &mut CUBuffer<u8>,
+) -> custos::Result<()> {
+    launch_kernel(
+        input.device(),
+        [20, 20, 1],
+        [32, 32, 1],
+        // [64, 34, 1],
+        // [32, 32, 1],
+        0,
+        CUDA_SOURCE,
+        "labelComponentsShared",
+        &[input, out, &width, &height, red, green, blue, &threshold, has_updated],
+    )
+}
+
 pub fn label_components_master_label(
     input: &CUBuffer<u8>,
     out: &mut CUBuffer<u8>,

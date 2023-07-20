@@ -501,13 +501,14 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
             let mut has_updated: custos::Buffer<'_, u8, CUDA> = CUBuffer::<u8>::new(device, 1);
             
             let start = Instant::now();
+            let mut final_iter = 0;
             for i in 0..width*height { // 0..width+height
                 let mut start = Instant::now();
                 if i == 1 {
                     start = Instant::now();
                 }
                 if i % 2 == 0 {
-                    label_components_master_label(
+                    label_components_shared(
                         &labels,
                         updated_labels,
                         &channels[0],
@@ -520,7 +521,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                     )
                     .unwrap();
                 } else {
-                    label_components_master_label(
+                    label_components_shared(
                         &updated_labels,
                         &mut labels,
                         &channels[0],
@@ -535,21 +536,64 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                 }
                 
                 device.stream().sync().unwrap();
-                if i == 1 {
+                if i == 1 {            
                     println!("one iter of labeling took {:?}", start.elapsed());
                 }
 
                 if has_updated.read()[0] == 0 {
+                    final_iter = i;
                     println!("iters: {i}");
                     break;
                 }
-
+                
                 has_updated.clear();
             }
+
+            /*for i in final_iter..final_iter+10 {
+                if i % 2 == 0 {
+                    label_components_master_label(
+                        &updated_labels,
+                        &mut labels,
+                        &channels[0],
+                        &channels[1],
+                        &channels[2],
+                        width,
+                        height,
+                        threshold,
+                        &mut has_updated
+                    )
+                    .unwrap();
+                } else {
+                    label_components_master_label(
+                        &labels,
+                        updated_labels,
+                        &channels[0],
+                        &channels[1],
+                        &channels[2],
+                        width,
+                        height,
+                        threshold,
+                        &mut has_updated
+                    )
+                    .unwrap();
+
+                }
+                device.stream().sync().unwrap();
+
+                if has_updated.read()[0] == 0 {
+                    println!("master step finished after {i} iters");
+                    break;
+                }
+                
+                has_updated.clear();
+            }*/
+            
+        
             println!("labeling took {:?}", start.elapsed());
             
-            copy_to_surface(&labels, surface, width, height);
+            // copy_to_surface(&labels, surface, width, height);
             device.stream().sync().unwrap();
+            copy_to_surface(&updated_labels, surface, width, height); 
             
             // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
             // fill the core f red
@@ -635,7 +679,7 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact, label_pixels_combinations, read_pixel, label_components_master_label};
+use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact, label_pixels_combinations, read_pixel, label_components_master_label, label_components_shared};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 
