@@ -87,7 +87,7 @@ extern "C"{
     }
 
 
-    __global__ void labelComponentsShared(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, unsigned char* hasUpdated) {
+    __global__ void labelComponentsShared(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, unsigned char* hasUpdated, unsigned char color) {
         int x = blockIdx.x * blockDim.x + threadIdx.x;
         int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -99,12 +99,32 @@ extern "C"{
             return;
         }
 
+        unsigned char activeColor = blockIdx.x % 2 + blockIdx.y % 2 * 2;
+
+        // printf("active color %d\n", activeColor);
+
+        if (color != activeColor) {
+            return;
+        }
+
         __shared__ uchar4 pixels[32][32];
-        pixels[threadIdx.y][threadIdx.x] = make_uchar4(R[y * width + x], G[y * width + x], B[y * width + x], 255);
-        
         __shared__ uchar4 labels[32][32];
-        // labels[threadIdx.y][threadIdx.x] = input[(y-blockIdx.y) * width + (x - blockIdx.x)];
-        labels[threadIdx.y][threadIdx.x] = input[y * width + x];
+
+
+        int newY = y - blockIdx.y;
+        int newX = x - blockIdx.x;
+        
+        int outIdx = newY * width + newX;
+        
+        int pixelIdx = newY * width + newX;
+        // int pixelIdx = y * width + x;
+        pixels[threadIdx.y][threadIdx.x] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
+
+        __syncthreads();
+
+        // labels[threadIdx.y][threadIdx.x] = input[(y-offsetY) * width + (x - offsetX)];
+        labels[threadIdx.y][threadIdx.x] = input[newY * width + newX];
+        // labels[threadIdx.y][threadIdx.x] = input[y * width + x];
         // labels[threadIdx.y - blockIdx.y][threadIdx.x - blockIdx.x] = input[y * width + x];
         
         __syncthreads();
@@ -117,10 +137,10 @@ extern "C"{
             uchar4 label = labels[threadIdx.y][threadIdx.x + 1];
             if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
                 if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
-                    labels[threadIdx.y][threadIdx.x] = label;
-                    __syncthreads();
+                    // labels[threadIdx.y][threadIdx.x] = label;
+                    // __syncthreads();
                     hasUpdated[0] = 1; 
-                    out[y * width + x] = label;
+                    out[outIdx] = label;
                     return;
                 }
             }
@@ -133,7 +153,7 @@ extern "C"{
             if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
                 if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
                     hasUpdated[0] = 1; 
-                    out[y * width + x] = label;
+                    out[outIdx] = label;
                     return;
                 }
             }
@@ -147,7 +167,7 @@ extern "C"{
                     // labels[threadIdx.y][threadIdx.x] = label;
                     // __syncthreads();
                     hasUpdated[0] = 1; 
-                    out[y * width + x] = label;
+                    out[outIdx] = label;
                     return;
                 }
             }
@@ -159,13 +179,13 @@ extern "C"{
             if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
                 if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
                     hasUpdated[0] = 1; 
-                    out[y * width + x] = label;
+                    out[outIdx] = label;
                     return;
                 }
             }
         }
 
-        out[y * width + x] = currentLabel; 
+        out[outIdx] = currentLabel; 
     }
 
     __global__ void labelComponentsMasterLabel(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, unsigned char* hasUpdated) {

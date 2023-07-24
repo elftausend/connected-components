@@ -4,13 +4,15 @@ mod utils;
 
 use std::{mem::size_of, ptr::null, time::Instant};
 
-use clap::{command, Parser, arg};
-use connected_comps::{label_pixels_rowed, label_components_rowed};
+use clap::{arg, command, Parser};
+use connected_comps::{label_components_rowed, label_pixels_rowed};
 use custos::{
+    buf,
     cuda::{api::CUstream, CUDAPtr},
     flag::AllocFlag,
     prelude::CUBuffer,
-    static_api::static_cuda, buf, CUDA,
+    static_api::static_cuda,
+    CUDA,
 };
 use glow::*;
 use glutin::event::VirtualKeyCode;
@@ -27,7 +29,7 @@ enum Mode {
     None,
     Labels,
     MouseHighlight,
-    RowWise
+    RowWise,
 }
 
 impl Mode {
@@ -36,7 +38,7 @@ impl Mode {
             Mode::None => Mode::Labels,
             Mode::Labels => Mode::MouseHighlight,
             Mode::MouseHighlight => Mode::RowWise,
-            Mode::RowWise => Mode::None
+            Mode::RowWise => Mode::None,
         };
         *self = mode;
     }
@@ -49,7 +51,7 @@ impl From<u8> for Mode {
             1 => Mode::Labels,
             2 => Mode::MouseHighlight,
             3 => Mode::RowWise,
-            _ => Mode::None
+            _ => Mode::None,
         }
     }
 }
@@ -159,7 +161,7 @@ pub fn main() {
         );
 
         let width = widths[0];
-        
+
         let height = heights[1]; // 1080
 
         println!("width: {}, height: {}", width, height);
@@ -325,7 +327,6 @@ pub fn main() {
 
         let mut count = 0;
 
-
         /*let mut filter_data_buf = get_constant_memory(
             surface_texture.device(),
             CUDA_SOURCE,
@@ -349,7 +350,7 @@ pub fn main() {
         let mut mode = Mode::None;
 
         let mut updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
-        
+
         let mut threshold = 20;
 
         event_loop.run(move |event, _, control_flow| {
@@ -400,24 +401,48 @@ pub fn main() {
                         gl.delete_vertex_array(vertex_array);
                         *control_flow = ControlFlow::Exit
                     }
-                    // get location of mouse cursor on window 
+                    // get location of mouse cursor on window
                     WindowEvent::CursorMoved { position, .. } => {
-                        let (win_width, win_height): (u32, u32) = window.window().inner_size().into();
+                        let (win_width, win_height): (u32, u32) =
+                            window.window().inner_size().into();
                         let (x, y) = (position.x as f32, position.y as f32);
-                        let (x, y) = ((x / win_width as f32) * width as f32, (y / win_height as f32) * height as f32);
+                        let (x, y) = (
+                            (x / win_width as f32) * width as f32,
+                            (y / win_height as f32) * height as f32,
+                        );
                         let cursor_loc = (x as usize, y as usize);
 
-                        let pixel = read_pixel(&updated_labels, cursor_loc.0, cursor_loc.1, width as usize, height as usize);
+                        let pixel = read_pixel(
+                            &updated_labels,
+                            cursor_loc.0,
+                            cursor_loc.1,
+                            width as usize,
+                            height as usize,
+                        );
                         // println!("pixel (label): {pixel:?}");
 
                         if mode == Mode::MouseHighlight {
-                            copy_to_surface(&updated_labels, &mut surface, width as usize, height as usize);
+                            copy_to_surface(
+                                &updated_labels,
+                                &mut surface,
+                                width as usize,
+                                height as usize,
+                            );
                             device.stream().sync().unwrap();
 
-                            color_component_at_pixel_exact(&surface_texture, &mut surface, cursor_loc.0, cursor_loc.1, width as usize, height as usize, pixel.0, pixel.1, pixel.2);
+                            color_component_at_pixel_exact(
+                                &surface_texture,
+                                &mut surface,
+                                cursor_loc.0,
+                                cursor_loc.1,
+                                width as usize,
+                                height as usize,
+                                pixel.0,
+                                pixel.1,
+                                pixel.2,
+                            );
                             device.stream().sync().unwrap();
                         }
-                        
                     }
                     WindowEvent::KeyboardInput {
                         device_id,
@@ -425,7 +450,8 @@ pub fn main() {
                         is_synthetic,
                     } => {
                         // switch between views with key press (label values)
-                        let channels: &[custos::Buffer<'_, u8, CUDA>; 3] = decoder.channels.as_ref().unwrap();
+                        let channels: &[custos::Buffer<'_, u8, CUDA>; 3] =
+                            decoder.channels.as_ref().unwrap();
                         if input.state == glutin::event::ElementState::Pressed {
                             let Some(keycode) = input.virtual_keycode.as_ref() else {
                                 return;
@@ -439,23 +465,63 @@ pub fn main() {
 
                             if keycode == &VirtualKeyCode::Plus {
                                 threshold += 1;
-                                update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels, threshold);
+                                update_on_mode_change(
+                                    &mode,
+                                    &mut surface,
+                                    &mut surface_texture,
+                                    channels,
+                                    width as usize,
+                                    height as usize,
+                                    device,
+                                    &mut updated_labels,
+                                    threshold,
+                                );
                             }
 
                             if keycode == &VirtualKeyCode::Minus {
                                 threshold -= 1;
-                                update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels, threshold);
+                                update_on_mode_change(
+                                    &mode,
+                                    &mut surface,
+                                    &mut surface_texture,
+                                    channels,
+                                    width as usize,
+                                    height as usize,
+                                    device,
+                                    &mut updated_labels,
+                                    threshold,
+                                );
                             }
 
                             if (VirtualKeyCode::Key1..VirtualKeyCode::Key0).contains(keycode) {
                                 mode = Mode::from(*keycode as u8);
-                                update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels, threshold);
+                                update_on_mode_change(
+                                    &mode,
+                                    &mut surface,
+                                    &mut surface_texture,
+                                    channels,
+                                    width as usize,
+                                    height as usize,
+                                    device,
+                                    &mut updated_labels,
+                                    threshold,
+                                );
                             }
-                            
+
                             match keycode {
                                 &VirtualKeyCode::Space => {
-                                    mode.next();                            
-                                    update_on_mode_change(&mode, &mut surface, &mut surface_texture, channels, width as usize, height as usize, device, &mut updated_labels, threshold);
+                                    mode.next();
+                                    update_on_mode_change(
+                                        &mode,
+                                        &mut surface,
+                                        &mut surface_texture,
+                                        channels,
+                                        width as usize,
+                                        height as usize,
+                                        device,
+                                        &mut updated_labels,
+                                        threshold,
+                                    );
                                 }
                                 _ => (),
                             }
@@ -469,7 +535,17 @@ pub fn main() {
     }
 }
 
-fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_texture: &mut CUBuffer<u8>, channels: &[CUBuffer<u8>], width: usize, height: usize, device: &CUDA, updated_labels: &mut CUBuffer<u8>, threshold: i32) {
+fn update_on_mode_change(
+    mode: &Mode,
+    surface: &mut CUBuffer<u8>,
+    surface_texture: &mut CUBuffer<u8>,
+    channels: &[CUBuffer<u8>],
+    width: usize,
+    height: usize,
+    device: &CUDA,
+    updated_labels: &mut CUBuffer<u8>,
+    threshold: i32,
+) {
     match mode {
         Mode::None => {
             interleave_rgb(
@@ -486,67 +562,83 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
         Mode::Labels => {
             let mut labels: custos::Buffer<'_, u8, CUDA> = buf![0u8; width * height * 4].to_cuda();
 
-            label_pixels_combinations(
-                &mut labels,
-                width,
-                height,
-            )
-            .unwrap();
+            label_pixels_combinations(&mut labels, width, height).unwrap();
 
             device.stream().sync().unwrap();
 
-            *updated_labels = buf![0u8; width * height * 4].to_cuda();
-            // *updated_labels = labels.clone(); // only for mouse pos debug
+            // *updated_labels = buf![0u8; width * height * 4].to_cuda();
+            *updated_labels = labels.clone(); // only for mouse pos debug
 
             let mut has_updated: custos::Buffer<'_, u8, CUDA> = CUBuffer::<u8>::new(device, 1);
-            
+
             let start = Instant::now();
             let mut final_iter = 0;
-            for i in 0..width*height { // 0..width+height
-                let mut start = Instant::now();
-                if i == 1 {
-                    start = Instant::now();
-                }
-                if i % 2 == 0 {
-                    label_components_shared(
-                        &labels,
-                        updated_labels,
-                        &channels[0],
-                        &channels[1],
-                        &channels[2],
-                        width,
-                        height,
-                        threshold,
-                        &mut has_updated
-                    )
-                    .unwrap();
-                } else {
-                    label_components_shared(
-                        &updated_labels,
-                        &mut labels,
-                        &channels[0],
-                        &channels[1],
-                        &channels[2],
-                        width,
-                        height,
-                        threshold,
-                        &mut has_updated
-                    )
-                    .unwrap();
-                }
-                
-                device.stream().sync().unwrap();
-                if i == 1 {            
-                    println!("one iter of labeling took {:?}", start.elapsed());
-                }
 
-                if has_updated.read()[0] == 0 {
-                    final_iter = i;
-                    println!("iters: {i}");
-                    break;
+            let mut ping = true;
+
+            let mut updates = true;
+
+            let mut it = 0;
+            while updates /*&& it < 1*/ {
+                it += 1;
+                // println!("epoch: {epoch}");
+                updates = false;
+                for color in 0..=3 {
+                    for i in 0..width * height * 10 {
+                        // 0..width+height
+                        let mut start = Instant::now();
+                        if i == 1 {
+                            start = Instant::now();
+                        }
+
+                        if ping {
+                            label_components_shared(
+                                &labels,
+                                updated_labels,
+                                &channels[0],
+                                &channels[1],
+                                &channels[2],
+                                width,
+                                height,
+                                threshold,
+                                &mut has_updated,
+                                color,
+                            )
+                            .unwrap();
+                            ping = false;
+                        } else {
+                            label_components_shared(
+                                &updated_labels,
+                                &mut labels,
+                                &channels[0],
+                                &channels[1],
+                                &channels[2],
+                                width,
+                                height,
+                                threshold,
+                                &mut has_updated,
+                                color,
+                            )
+                            .unwrap();
+                            ping = true;
+                        }
+                        device.stream().sync().unwrap();
+
+                        if i == 1 {
+                            println!("one iter of labeling took {:?}", start.elapsed());
+                        }
+
+                        if has_updated.read()[0] == 0 {
+                            final_iter = i;
+                            println!("color: {color}, iters: {i}");
+                            break;
+                        } else {
+                            updates = true;
+                        }
+
+                        has_updated.clear();
+                    }
                 }
-                
-                has_updated.clear();
             }
 
             /*for i in final_iter..final_iter+10 {
@@ -584,40 +676,38 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                     println!("master step finished after {i} iters");
                     break;
                 }
-                
+
                 has_updated.clear();
             }*/
-            
-        
+
             println!("labeling took {:?}", start.elapsed());
-            
+
             // copy_to_surface(&labels, surface, width, height);
             device.stream().sync().unwrap();
-            copy_to_surface(&updated_labels, surface, width, height); 
-            
+            if ping {
+                copy_to_surface(&labels, surface, width, height);
+            } else {
+                copy_to_surface(&updated_labels, surface, width, height);
+            }
+
             // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
             // fill the core f red
             // color_component_at_pixel_exact(&surface_texture, surface, 8, 64, width, height);
 
             device.stream().sync().unwrap();
         }
-        Mode::MouseHighlight => {},
+        Mode::MouseHighlight => {}
         Mode::RowWise => {
             let mut labels = buf![0u8; width * height * 4].to_cuda();
-            
-            label_pixels_rowed(
-                &mut labels,
-                width,
-                height,
-            )
-            .unwrap();
+
+            label_pixels_rowed(&mut labels, width, height).unwrap();
 
             device.stream().sync().unwrap();
             *updated_labels = buf![0u8; width * height * 4].to_cuda();
 
             let mut has_updated: custos::Buffer<'_, u8, CUDA> = CUBuffer::<u8>::new(device, 1);
 
-            for i in 0..width*2 {
+            for i in 0..width * 2 {
                 if i % 2 == 0 {
                     label_components(
                         &labels,
@@ -628,7 +718,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         width,
                         height,
                         threshold,
-                        &mut has_updated
+                        &mut has_updated,
                     )
                     .unwrap();
                 } else {
@@ -641,7 +731,7 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
                         width,
                         height,
                         threshold,
-                        &mut has_updated
+                        &mut has_updated,
                     )
                     .unwrap();
                 }
@@ -649,7 +739,6 @@ fn update_on_mode_change(mode: &Mode, surface: &mut CUBuffer<u8>, surface_textur
             }
             device.stream().sync().unwrap();
             copy_to_surface(&labels, surface, width, height);
-
         }
     }
 }
@@ -679,7 +768,11 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::connected_comps::{label_components, fill_cuda_surface, interleave_rgb, label_pixels, copy_to_surface, color_component_at_pixel, color_component_at_pixel_exact, label_pixels_combinations, read_pixel, label_components_master_label, label_components_shared};
+use crate::connected_comps::{
+    color_component_at_pixel, color_component_at_pixel_exact, copy_to_surface, fill_cuda_surface,
+    interleave_rgb, label_components, label_components_master_label, label_components_shared,
+    label_pixels, label_pixels_combinations, read_pixel,
+};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 
@@ -851,4 +944,17 @@ unsafe fn create_vertex_buffer(
     gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
 
     (vbo, vao, ebo)
+}
+
+#[test]
+fn test_color() {
+    let colors = [0, 1, 2, 3];
+    let block_idx_x = 4;
+    let block_idx_y = 1;
+
+    let colors_at_idxs = [[0, 1, 0, 1], [2, 3, 2, 3], [0, 1, 0, 1], [2, 3, 2, 3]];
+
+    let color = block_idx_x % 2 + block_idx_y % 2 * 2;
+
+    println!("color: {color}");
 }

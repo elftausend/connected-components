@@ -40,11 +40,7 @@ pub fn interleave_rgb(
     )
 }
 
-pub fn label_pixels(
-    target: &mut CUBuffer<u8>,
-    width: usize,
-    height: usize,
-) -> custos::Result<()> {
+pub fn label_pixels(target: &mut CUBuffer<u8>, width: usize, height: usize) -> custos::Result<()> {
     launch_kernel(
         target.device(),
         [64, 135, 1],
@@ -106,7 +102,17 @@ pub fn label_components(
         0,
         CUDA_SOURCE,
         "labelComponents",
-        &[input, out, &width, &height, red, green, blue, &threshold, has_updated],
+        &[
+            input,
+            out,
+            &width,
+            &height,
+            red,
+            green,
+            blue,
+            &threshold,
+            has_updated,
+        ],
     )
 }
 
@@ -120,6 +126,7 @@ pub fn label_components_shared(
     height: usize,
     threshold: i32,
     has_updated: &mut CUBuffer<u8>,
+    color: u8,
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
@@ -130,7 +137,18 @@ pub fn label_components_shared(
         0,
         CUDA_SOURCE,
         "labelComponentsShared",
-        &[input, out, &width, &height, red, green, blue, &threshold, has_updated],
+        &[
+            input,
+            out,
+            &width,
+            &height,
+            red,
+            green,
+            blue,
+            &threshold,
+            has_updated,
+            &color,
+        ],
     )
 }
 
@@ -152,7 +170,17 @@ pub fn label_components_master_label(
         0,
         CUDA_SOURCE,
         "labelComponentsMasterLabel",
-        &[input, out, &width, &height, red, green, blue, &threshold, has_updated],
+        &[
+            input,
+            out,
+            &width,
+            &height,
+            red,
+            green,
+            blue,
+            &threshold,
+            has_updated,
+        ],
     )
 }
 
@@ -176,7 +204,12 @@ pub fn label_components_rowed(
     )
 }
 
-pub fn copy_to_surface(labels: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, width: usize, height: usize) {
+pub fn copy_to_surface(
+    labels: &CUBuffer<u8>,
+    surface: &mut CUBuffer<u8>,
+    width: usize,
+    height: usize,
+) {
     launch_kernel(
         labels.device(),
         [64, 135, 1],
@@ -185,10 +218,18 @@ pub fn copy_to_surface(labels: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, width:
         CUDA_SOURCE,
         "copyToSurface",
         &[labels, surface, &width, &height],
-    ).unwrap()
+    )
+    .unwrap()
 }
 
-pub fn color_component_at_pixel(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, x: usize, y: usize, width: usize, height: usize) {
+pub fn color_component_at_pixel(
+    texture: &CUBuffer<u8>,
+    surface: &mut CUBuffer<u8>,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+) {
     launch_kernel(
         surface.device(),
         [64, 135, 1],
@@ -197,10 +238,21 @@ pub fn color_component_at_pixel(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u
         CUDA_SOURCE,
         "colorComponentAtPixel",
         &[&texture, surface, &x, &y, &width, &height],
-    ).unwrap()
+    )
+    .unwrap()
 }
 
-pub fn color_component_at_pixel_exact(texture: &CUBuffer<u8>, surface: &mut CUBuffer<u8>, x: usize, y: usize, width: usize, height: usize, r: u8, g: u8, b: u8) {
+pub fn color_component_at_pixel_exact(
+    texture: &CUBuffer<u8>,
+    surface: &mut CUBuffer<u8>,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    r: u8,
+    g: u8,
+    b: u8,
+) {
     launch_kernel(
         surface.device(),
         [64, 135, 1],
@@ -209,10 +261,17 @@ pub fn color_component_at_pixel_exact(texture: &CUBuffer<u8>, surface: &mut CUBu
         CUDA_SOURCE,
         "colorComponentAtPixelExact",
         &[&texture, surface, &x, &y, &width, &height, &r, &g, &b],
-    ).unwrap()
+    )
+    .unwrap()
 }
 
-pub fn read_pixel(surface: &CUBuffer<u8>, x: usize, y: usize, width: usize, height: usize) -> (u8, u8, u8) {
+pub fn read_pixel(
+    surface: &CUBuffer<u8>,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+) -> (u8, u8, u8) {
     let mut r = CUBuffer::<u8>::new(surface.device(), 1);
     let mut g = CUBuffer::<u8>::new(surface.device(), 1);
     let mut b = CUBuffer::<u8>::new(surface.device(), 1);
@@ -224,7 +283,8 @@ pub fn read_pixel(surface: &CUBuffer<u8>, x: usize, y: usize, width: usize, heig
         CUDA_SOURCE,
         "readPixelValue",
         &[&surface, &x, &y, &mut r, &mut g, &mut b, &width, &height],
-    ).unwrap();
+    )
+    .unwrap();
 
     (r.read()[0], g.read()[0], b.read()[0])
 }
