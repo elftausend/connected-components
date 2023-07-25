@@ -569,10 +569,9 @@ fn update_on_mode_change(
             // *updated_labels = buf![0u8; width * height * 4].to_cuda();
             *updated_labels = labels.clone(); // only for mouse pos debug
 
-            let mut has_updated: custos::Buffer<'_, u8, CUDA> = CUBuffer::<u8>::new(device, 1);
+            let mut has_updated: custos::Buffer<'_, i32, CUDA> = CUBuffer::<i32>::new(device, 1);
 
             let start = Instant::now();
-            let mut final_iter = 0;
 
             let mut ping = true;
 
@@ -584,7 +583,7 @@ fn update_on_mode_change(
                 // println!("epoch: {epoch}");
                 updates = false;
                 for (offset_y, offset_x) in offsets {
-                    for i in 0..width * height * 10 {
+                    for i in 0..width * height * 2 {
                         // 0..width+height
                         let mut start = Instant::now();
                         if i == 1 {
@@ -627,12 +626,11 @@ fn update_on_mode_change(
                         device.stream().sync().unwrap();
 
                         if i == 1 {
-                            println!("one iter of labeling took {:?}", start.elapsed());
+                            // println!("one iter of labeling took {:?}", start.elapsed());
                         }
 
                         if has_updated.read()[0] == 0 {
-                            final_iter = i;
-                            println!("iters: {i}");
+                            // println!("iters: {i}");
                             break;
                         } else {
                             updates = true;
@@ -709,7 +707,8 @@ fn update_on_mode_change(
 
             let mut has_updated: custos::Buffer<'_, u8, CUDA> = CUBuffer::<u8>::new(device, 1);
 
-            for i in 0..width * 2 {
+            let start = Instant::now();
+            for i in 0..width * height * 10 {
                 if i % 2 == 0 {
                     label_components_master_label(
                         &labels,
@@ -737,9 +736,15 @@ fn update_on_mode_change(
                     )
                     .unwrap();
                 }
+                device.stream().sync().unwrap();
+                if has_updated.read()[0] == 0 {
+                    println!("master step finished after {i} iters");
+                    break;
+                }
                 has_updated.clear();
             }
             device.stream().sync().unwrap();
+            println!("(master,rowwise) labeling took {:?}", start.elapsed());
             copy_to_surface(&labels, surface, width, height);
         }
     }

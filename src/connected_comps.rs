@@ -125,13 +125,13 @@ pub fn label_components_shared(
     width: usize,
     height: usize,
     threshold: i32,
-    has_updated: &mut CUBuffer<u8>,
+    has_updated: &mut CUBuffer<i32>,
     offset_y: u8,
     offset_x: u8,
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
-        [6, 6, 1],
+        [16, 16, 1],
         [32, 32, 1],
         // [64, 34, 1],
         // [32, 32, 1],

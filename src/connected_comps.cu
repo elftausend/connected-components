@@ -87,7 +87,7 @@ extern "C"{
     }
 
 
-    __global__ void labelComponentsShared(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, unsigned char* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
+    __global__ void labelComponentsShared(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, int* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
         int bloatedBlockIdxX = blockIdx.x * 2 + offsetX;
         int bloatedBlockIdxY = blockIdx.y * 2 + offsetY;
 
@@ -117,16 +117,12 @@ extern "C"{
         int newX = x;// - blockIdx.x;
 
 
-        
-        int outIdx = y * width + x;
         int pixelIdx = y * width + x;
 
         // int pixelIdx = y * width + x;
         // pixels[threadIdx.y][threadIdx.x] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
         // labels[threadIdx.y][threadIdx.x] = input[(y-offsetY) * width + (x - offsetX)];
         // labels[threadIdx.y][threadIdx.x] = input[newY * width + newX];
-
-        pixels[threadIdx.y+1][threadIdx.x+1] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
 
         if (threadIdx.y == 0) {
             int upperOverlap = (bloatedBlockIdxY * blockDim.y -1);
@@ -185,7 +181,7 @@ extern "C"{
             }
         }
 
-
+        pixels[threadIdx.y+1][threadIdx.x+1] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
         labels[threadIdx.y+1][threadIdx.x+1] = input[y * width + x];
         // labels[threadIdx.y - blockIdx.y][threadIdx.x - blockIdx.x] = input[y * width + x];        
         __syncthreads();
@@ -193,66 +189,76 @@ extern "C"{
         // uchar4 currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
         // uchar4 currentPixel = pixels[threadIdx.y+1][threadIdx.x+1];
 
+        // return;
+        int outIdx = y * width + x;
+
+        // right        
+        {
         uchar4 currentLabel = labels[threadIdx.y+1][32-threadIdx.x];
         uchar4 currentPixel = pixels[threadIdx.y+1][32-threadIdx.x];
-
-        // return;
-
-        if (threadIdx.x < 32) {
-            uchar4 pixel = pixels[threadIdx.y+1][33-threadIdx.x];
-            uchar4 label = labels[threadIdx.y+1][33-threadIdx.x];
-            if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
-                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
-                    // labels[threadIdx.y][threadIdx.x] = label;
-                    // __syncthreads();
-                    hasUpdated[0] = 1; 
-                    out[outIdx] = label;
-                    return;
-                }
+        uchar4 pixel = pixels[threadIdx.y+1][33-threadIdx.x];
+        uchar4 label = labels[threadIdx.y+1][33-threadIdx.x];
+        if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
+            if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
+                // labels[threadIdx.y][threadIdx.x] = label;
+                labels[threadIdx.y+1][32-threadIdx.x] = label;       
+                // hasUpdated[0] = 1; 
+                atomicOr(hasUpdated, 1);
             }
         }
-        /*
-        if (int (threadIdx.x)-1 > 0) {
-            uchar4 pixel = pixels[threadIdx.y][threadIdx.x - 1];
-            uchar4 label = labels[threadIdx.y][threadIdx.x - 1];
+        }
+        __syncthreads();
 
-            if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
-                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
-                    hasUpdated[0] = 1; 
-                    out[outIdx] = label;
-                    return;
-                }
+        // down
+        {
+        uchar4 currentLabel = labels[32-threadIdx.y][threadIdx.x+1];
+        uchar4 currentPixel = pixels[32-threadIdx.y][threadIdx.x+1];
+
+        uchar4 pixel = pixels[33-threadIdx.y][threadIdx.x+1];
+        uchar4 label = labels[33-threadIdx.y][threadIdx.x+1];
+        if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
+            if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
+                labels[32-threadIdx.y][threadIdx.x+1] = label;
+                atomicOr(hasUpdated, 1);
             }
         }
+        }
+        __syncthreads();
 
-        if (threadIdx.y+1 < 32) {
-            uchar4 pixel = pixels[threadIdx.y + 1][threadIdx.x];
-            uchar4 label = labels[threadIdx.y + 1][threadIdx.x];
-            if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
-                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
-                    // labels[threadIdx.y][threadIdx.x] = label;
-                    // __syncthreads();
-                    hasUpdated[0] = 1; 
-                    out[outIdx] = label;
-                    return;
-                }
+        //left
+        {
+        uchar4 currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
+        uchar4 currentPixel = pixels[threadIdx.y+1][threadIdx.x+1];
+        uchar4 pixel = pixels[threadIdx.y+1][threadIdx.x];
+        uchar4 label = labels[threadIdx.y+1][threadIdx.x];
+
+        if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
+            if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
+                labels[threadIdx.y+1][threadIdx.x+1] = label;
+                atomicOr(hasUpdated, 1);
             }
         }
+        }
+        __syncthreads();
 
-        if (int (threadIdx.y)-1 > 0) {
-            uchar4 pixel = pixels[threadIdx.y - 1][threadIdx.x];
-            uchar4 label = labels[threadIdx.y - 1][threadIdx.x];
-            if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
-                if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
-                    hasUpdated[0] = 1; 
-                    out[outIdx] = label;
-                    return;
-                }
+        // up
+        {
+        uchar4 currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
+        uchar4 currentPixel = pixels[threadIdx.y+1][threadIdx.x+1];
+
+        uchar4 pixel = pixels[threadIdx.y][threadIdx.x+1];
+        uchar4 label = labels[threadIdx.y][threadIdx.x+1];
+        if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
+            if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
+                labels[threadIdx.y+1][threadIdx.x+1] = label;
+                atomicOr(hasUpdated, 1);
             }
         }
-        */
+        }
+        __syncthreads();
 
-        out[outIdx] = currentLabel; 
+
+        out[outIdx] = labels[threadIdx.y+1][threadIdx.x+1];
     }
 
     __global__ void labelComponentsMasterLabel(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, unsigned char* hasUpdated) {
@@ -301,8 +307,8 @@ extern "C"{
             return;
         }
 
-        out[y * width + x] = currentLabel;
-        return;
+        /*out[y * width + x] = currentLabel;
+        return;*/
 
         for (int i = x - 1; i >= 0; i--) {
             unsigned char valRedLeft = R[y * width + i];
