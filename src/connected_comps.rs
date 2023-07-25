@@ -131,7 +131,7 @@ pub fn label_components_shared(
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
-        [2, 2, 1],
+        [6, 6, 1],
         [32, 32, 1],
         // [64, 34, 1],
         // [32, 32, 1],

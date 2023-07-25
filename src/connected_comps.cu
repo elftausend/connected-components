@@ -88,7 +88,6 @@ extern "C"{
 
 
     __global__ void labelComponentsShared(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, unsigned char* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
-
         int bloatedBlockIdxX = blockIdx.x * 2 + offsetX;
         int bloatedBlockIdxY = blockIdx.y * 2 + offsetY;
 
@@ -111,26 +110,86 @@ extern "C"{
             return;
         }*/
 
-        __shared__ uchar4 pixels[32][32];
-        __shared__ uchar4 labels[32][32];
+        __shared__ uchar4 pixels[34][34];
+        __shared__ uchar4 labels[34][34];
+
+        int newY = y;// - blockIdx.y;
+        int newX = x;// - blockIdx.x;
 
 
-        int newY = y - blockIdx.y;
-        int newX = x - blockIdx.x;
         
-        int outIdx = newY * width + newX;
-        
-        int pixelIdx = newY * width + newX;
+        int outIdx = y * width + x;
+        int pixelIdx = y * width + x;
+
         // int pixelIdx = y * width + x;
-        pixels[threadIdx.y][threadIdx.x] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
+        // pixels[threadIdx.y][threadIdx.x] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
         // labels[threadIdx.y][threadIdx.x] = input[(y-offsetY) * width + (x - offsetX)];
-        labels[threadIdx.y][threadIdx.x] = input[newY * width + newX];
-        // labels[threadIdx.y][threadIdx.x] = input[y * width + x];
+        // labels[threadIdx.y][threadIdx.x] = input[newY * width + newX];
+
+        pixels[threadIdx.y+1][threadIdx.x+1] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
+
+        if (threadIdx.y == 0) {
+            int upperOverlap = (bloatedBlockIdxY * blockDim.y -1);
+            int upperOverlapIdx = upperOverlap * width + x;
+            if (upperOverlap >= 0) {
+
+                labels[0][threadIdx.x+1] = input[upperOverlapIdx];
+                pixels[0][threadIdx.x+1] = make_uchar4(R[upperOverlapIdx], G[upperOverlapIdx], B[upperOverlapIdx], 255);
+                if (threadIdx.x == 0) {
+                    labels[0][0] = input[upperOverlapIdx - 1];
+                    pixels[0][0] = make_uchar4(R[upperOverlapIdx - 1], G[upperOverlapIdx - 1], B[upperOverlapIdx - 1], 255);
+                }
+                if (threadIdx.x == 31) {
+                    labels[0][33] = input[upperOverlapIdx + 1];
+                    pixels[0][33] = make_uchar4(R[upperOverlapIdx + 1], G[upperOverlapIdx + 1], B[upperOverlapIdx + 1], 255);
+                }
+            }
+        }
+
+        if (threadIdx.y == 31) {
+            int lowerOverlap =  (bloatedBlockIdxY * blockDim.y + 32);
+            int lowerOverlapIdx = lowerOverlap * width + x;
+            if (lowerOverlap < height) {                
+                labels[33][threadIdx.x+1] = input[lowerOverlapIdx];
+                pixels[33][threadIdx.x+1] = make_uchar4(R[lowerOverlapIdx], G[lowerOverlapIdx], B[lowerOverlapIdx], 255);
+                if (threadIdx.x == 0) {
+                    labels[33][0] = input[lowerOverlapIdx - 1];
+                    pixels[33][0] = make_uchar4(R[lowerOverlapIdx - 1], G[lowerOverlapIdx - 1], B[lowerOverlapIdx - 1], 255);
+                }
+                if (threadIdx.x == 31) {
+                    labels[33][33] = input[lowerOverlapIdx + 1];
+                    pixels[33][33] = make_uchar4(R[lowerOverlapIdx + 1], G[lowerOverlapIdx + 1], B[lowerOverlapIdx + 1], 255);
+                }
+            }
+        }
+
+        if (threadIdx.x == 0) {
+            int leftOverlap =  (bloatedBlockIdxX * blockDim.x -1);
+            int leftOverlapIdx = y * width + leftOverlap;
+            if (leftOverlap >= 0) {
+                labels[threadIdx.y+1][0] = input[leftOverlapIdx];
+                pixels[threadIdx.y+1][0] = make_uchar4(R[leftOverlapIdx], G[leftOverlapIdx], B[leftOverlapIdx], 255);
+            }
+        }
+
+        if (threadIdx.x == 31) {
+            int rightOverlap =  (bloatedBlockIdxX * blockDim.x + 32);
+            int rightOverlapIdx = y * width + rightOverlap;
+            if (rightOverlap < width) {
+                labels[threadIdx.y+1][33] = input[rightOverlapIdx];
+                pixels[threadIdx.y+1][33] = make_uchar4(R[rightOverlapIdx], G[rightOverlapIdx], B[rightOverlapIdx], 255);
+            }
+        }
+
+
+        labels[threadIdx.y+1][threadIdx.x+1] = input[y * width + x];
         // labels[threadIdx.y - blockIdx.y][threadIdx.x - blockIdx.x] = input[y * width + x];        
         __syncthreads();
 
         uchar4 currentLabel = labels[threadIdx.y][threadIdx.x];
         uchar4 currentPixel = pixels[threadIdx.y][threadIdx.x];
+
+        return;
 
         if (threadIdx.x+1 < 32) {
             uchar4 pixel = pixels[threadIdx.y][threadIdx.x + 1];
