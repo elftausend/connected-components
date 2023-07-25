@@ -702,7 +702,7 @@ fn update_on_mode_change(
         Mode::RowWise => {
             let mut labels = buf![0u8; width * height * 4].to_cuda();
 
-            label_pixels_rowed(&mut labels, width, height).unwrap();
+            label_pixels_combinations(&mut labels, width, height).unwrap();
 
             device.stream().sync().unwrap();
             *updated_labels = buf![0u8; width * height * 4].to_cuda();
@@ -711,7 +711,7 @@ fn update_on_mode_change(
 
             for i in 0..width * 2 {
                 if i % 2 == 0 {
-                    label_components(
+                    label_components_master_label(
                         &labels,
                         updated_labels,
                         &channels[0],
@@ -724,7 +724,7 @@ fn update_on_mode_change(
                     )
                     .unwrap();
                 } else {
-                    label_components(
+                    label_components_master_label(
                         &updated_labels,
                         &mut labels,
                         &channels[0],

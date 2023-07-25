@@ -135,6 +135,8 @@ extern "C"{
 
                 labels[0][threadIdx.x+1] = input[upperOverlapIdx];
                 pixels[0][threadIdx.x+1] = make_uchar4(R[upperOverlapIdx], G[upperOverlapIdx], B[upperOverlapIdx], 255);
+
+                //maybe not needed, diagonals
                 if (threadIdx.x == 0) {
                     labels[0][0] = input[upperOverlapIdx - 1];
                     pixels[0][0] = make_uchar4(R[upperOverlapIdx - 1], G[upperOverlapIdx - 1], B[upperOverlapIdx - 1], 255);
@@ -152,6 +154,8 @@ extern "C"{
             if (lowerOverlap < height) {                
                 labels[33][threadIdx.x+1] = input[lowerOverlapIdx];
                 pixels[33][threadIdx.x+1] = make_uchar4(R[lowerOverlapIdx], G[lowerOverlapIdx], B[lowerOverlapIdx], 255);
+
+                //maybe not needed, diagonals
                 if (threadIdx.x == 0) {
                     labels[33][0] = input[lowerOverlapIdx - 1];
                     pixels[33][0] = make_uchar4(R[lowerOverlapIdx - 1], G[lowerOverlapIdx - 1], B[lowerOverlapIdx - 1], 255);
@@ -186,14 +190,17 @@ extern "C"{
         // labels[threadIdx.y - blockIdx.y][threadIdx.x - blockIdx.x] = input[y * width + x];        
         __syncthreads();
 
-        uchar4 currentLabel = labels[threadIdx.y][threadIdx.x];
-        uchar4 currentPixel = pixels[threadIdx.y][threadIdx.x];
+        // uchar4 currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
+        // uchar4 currentPixel = pixels[threadIdx.y+1][threadIdx.x+1];
 
-        return;
+        uchar4 currentLabel = labels[threadIdx.y+1][32-threadIdx.x];
+        uchar4 currentPixel = pixels[threadIdx.y+1][32-threadIdx.x];
 
-        if (threadIdx.x+1 < 32) {
-            uchar4 pixel = pixels[threadIdx.y][threadIdx.x + 1];
-            uchar4 label = labels[threadIdx.y][threadIdx.x + 1];
+        // return;
+
+        if (threadIdx.x < 32) {
+            uchar4 pixel = pixels[threadIdx.y+1][33-threadIdx.x];
+            uchar4 label = labels[threadIdx.y+1][33-threadIdx.x];
             if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
                 if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
                     // labels[threadIdx.y][threadIdx.x] = label;
@@ -204,7 +211,7 @@ extern "C"{
                 }
             }
         }
-
+        /*
         if (int (threadIdx.x)-1 > 0) {
             uchar4 pixel = pixels[threadIdx.y][threadIdx.x - 1];
             uchar4 label = labels[threadIdx.y][threadIdx.x - 1];
@@ -243,6 +250,7 @@ extern "C"{
                 }
             }
         }
+        */
 
         out[outIdx] = currentLabel; 
     }
@@ -285,13 +293,16 @@ extern "C"{
                 hasMaster = true;
             }
         }
-
+    
         if (hasMaster) {
             hasMaster = false;
             out[y * width + x] = masterLabel;
             hasUpdated[0] = 1;
             return;
         }
+
+        out[y * width + x] = currentLabel;
+        return;
 
         for (int i = x - 1; i >= 0; i--) {
             unsigned char valRedLeft = R[y * width + i];
