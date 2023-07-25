@@ -123,14 +123,10 @@ extern "C"{
         int pixelIdx = newY * width + newX;
         // int pixelIdx = y * width + x;
         pixels[threadIdx.y][threadIdx.x] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
-
-        __syncthreads();
-
         // labels[threadIdx.y][threadIdx.x] = input[(y-offsetY) * width + (x - offsetX)];
         labels[threadIdx.y][threadIdx.x] = input[newY * width + newX];
         // labels[threadIdx.y][threadIdx.x] = input[y * width + x];
-        // labels[threadIdx.y - blockIdx.y][threadIdx.x - blockIdx.x] = input[y * width + x];
-        
+        // labels[threadIdx.y - blockIdx.y][threadIdx.x - blockIdx.x] = input[y * width + x];        
         __syncthreads();
 
         uchar4 currentLabel = labels[threadIdx.y][threadIdx.x];
