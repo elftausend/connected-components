@@ -578,12 +578,12 @@ fn update_on_mode_change(
 
             let mut updates = true;
 
-            let mut it = 0;
-            while updates /*&& it < 1*/ {
-                it += 1;
+            let offsets = [(0, 0), (0,1), (1,0), (1, 1)];
+
+            while updates {
                 // println!("epoch: {epoch}");
                 updates = false;
-                for color in 0..=3 {
+                for (offset_y, offset_x) in offsets {
                     for i in 0..width * height * 10 {
                         // 0..width+height
                         let mut start = Instant::now();
@@ -602,7 +602,8 @@ fn update_on_mode_change(
                                 height,
                                 threshold,
                                 &mut has_updated,
-                                color,
+                                offset_y,
+                                offset_x,
                             )
                             .unwrap();
                             ping = false;
@@ -617,7 +618,8 @@ fn update_on_mode_change(
                                 height,
                                 threshold,
                                 &mut has_updated,
-                                color,
+                                offset_y,
+                                offset_x
                             )
                             .unwrap();
                             ping = true;
@@ -630,7 +632,7 @@ fn update_on_mode_change(
 
                         if has_updated.read()[0] == 0 {
                             final_iter = i;
-                            println!("color: {color}, iters: {i}");
+                            println!("iters: {i}");
                             break;
                         } else {
                             updates = true;

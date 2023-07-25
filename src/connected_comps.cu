@@ -87,9 +87,13 @@ extern "C"{
     }
 
 
-    __global__ void labelComponentsShared(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, unsigned char* hasUpdated, unsigned char color) {
-        int x = blockIdx.x * blockDim.x + threadIdx.x;
-        int y = blockIdx.y * blockDim.y + threadIdx.y;
+    __global__ void labelComponentsShared(uchar4* input, uchar4* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, unsigned char* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
+
+        int bloatedBlockIdxX = blockIdx.x * 2 + offsetX;
+        int bloatedBlockIdxY = blockIdx.y * 2 + offsetY;
+
+        int x = bloatedBlockIdxX * blockDim.x + threadIdx.x;
+        int y = bloatedBlockIdxY * blockDim.y + threadIdx.y;
 
         if (x >= width) {
             return;
@@ -99,13 +103,13 @@ extern "C"{
             return;
         }
 
-        unsigned char activeColor = blockIdx.x % 2 + blockIdx.y % 2 * 2;
+        /*unsigned char activeColor = blockIdx.x % 2 + blockIdx.y % 2 * 2;
 
         // printf("active color %d\n", activeColor);
 
         if (color != activeColor) {
             return;
-        }
+        }*/
 
         __shared__ uchar4 pixels[32][32];
         __shared__ uchar4 labels[32][32];

@@ -126,11 +126,12 @@ pub fn label_components_shared(
     height: usize,
     threshold: i32,
     has_updated: &mut CUBuffer<u8>,
-    color: u8,
+    offset_y: u8,
+    offset_x: u8,
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
-        [20, 20, 1],
+        [2, 2, 1],
         [32, 32, 1],
         // [64, 34, 1],
         // [32, 32, 1],
@@ -147,7 +148,8 @@ pub fn label_components_shared(
             blue,
             &threshold,
             has_updated,
-            &color,
+            &offset_y,
+            &offset_x,
         ],
     )
 }
