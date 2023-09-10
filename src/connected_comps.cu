@@ -207,6 +207,7 @@ extern "C"{
             }
         }
         }
+
         __syncthreads();
 
         // down

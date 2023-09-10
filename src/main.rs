@@ -1,23 +1,30 @@
 mod connected_comps;
-mod jpeg_decoder;
+// mod jpeg_decoder;
 mod utils;
 
-use std::{mem::size_of, ptr::null, time::Instant};
+use std::{
+    mem::size_of,
+    ptr::{null, null_mut},
+    time::Instant,
+};
 
 use clap::{arg, command, Parser};
 use connected_comps::{label_components_rowed, label_pixels_rowed};
 use custos::{
-    buf,
     cuda::{api::CUstream, CUDAPtr},
     flag::AllocFlag,
     prelude::CUBuffer,
-    static_api::static_cuda,
-    CUDA,
+    CUDA, static_api::static_cuda,
 };
 use glow::*;
 use glutin::event::VirtualKeyCode;
-use nvjpeg_sys::{nvjpegChromaSubsampling_t, nvjpegGetImageInfo};
+use nvjpeg_sys::{
+    check, nvjpegChromaSubsampling_t, nvjpegCreateSimple, nvjpegDecode, nvjpegDestroy,
+    nvjpegGetImageInfo, nvjpegHandle_t, nvjpegImage_t, nvjpegJpegStateCreate,
+    nvjpegJpegStateDestroy, nvjpegJpegState_t, nvjpegOutputFormat_t_NVJPEG_OUTPUT_RGB,
+};
 
+#[track_caller]
 pub fn check_error(value: u32, msg: &str) {
     if value != 0 {
         panic!("Error: {value} with message: {msg}")
@@ -63,11 +70,91 @@ pub struct Args {
     image_path: String,
 }
 
-pub fn main() {
+unsafe fn decode_raw_jpeg<'a>(
+    raw_data: &[u8],
+    device: &'a CUDA,
+) -> Result<([custos::Buffer<'a, u8, CUDA>; 3], i32, i32), Box<dyn std::error::Error + Send + Sync>> {
+    let mut handle: nvjpegHandle_t = null_mut();
+
+    let status = nvjpegCreateSimple(&mut handle);
+    check!(status, "Could not create simple handle. ");
+
+    let mut jpeg_state: nvjpegJpegState_t = null_mut();
+    let status = nvjpegJpegStateCreate(handle, &mut jpeg_state);
+    check!(status, "Could not create jpeg state. ");
+
+    let mut n_components = 0;
+    let mut subsampling: nvjpegChromaSubsampling_t = 0;
+    let mut widths = [0, 0, 0];
+    let mut heights = [0, 0, 0];
+
+    let status = nvjpegGetImageInfo(
+        handle,
+        raw_data.as_ptr(),
+        raw_data.len(),
+        &mut n_components,
+        &mut subsampling,
+        widths.as_mut_ptr(),
+        heights.as_mut_ptr(),
+    );
+    check!(status, "Could not get image info. ");
+
+    heights[0] = heights[1] * 2;
+    // heights[0] = 300;
+
+    println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
+
+    let mut image: nvjpegImage_t = nvjpegImage_t::new();
+
+    image.pitch[0] = widths[0] as usize;
+    image.pitch[1] = widths[0] as usize;
+    image.pitch[2] = widths[0] as usize;
+
+    let channel0 = custos::Buffer::<u8, _>::new(device, image.pitch[0] * heights[0] as usize);
+    let channel1 = custos::Buffer::<u8, _>::new(device, image.pitch[0] * heights[0] as usize);
+    let channel2 = custos::Buffer::<u8, _>::new(device, image.pitch[0] * heights[0] as usize);
+
+    image.channel[0] = channel0.cu_ptr() as *mut _;
+    image.channel[1] = channel1.cu_ptr() as *mut _;
+    image.channel[2] = channel2.cu_ptr() as *mut _;
+
+    let status = nvjpegDecode(
+        handle,
+        jpeg_state,
+        raw_data.as_ptr(),
+        raw_data.len(),
+        nvjpegOutputFormat_t_NVJPEG_OUTPUT_RGB,
+        &mut image,
+        // device.stream().0 as *mut _,
+        null_mut(),
+    );
+    check!(status, "Could not decode image. ");
+
+    //device.stream().sync()?;
+
+    // free
+
+    let status = nvjpegJpegStateDestroy(jpeg_state);
+    check!(status, "Could not free jpeg state. ");
+
+    let status = nvjpegDestroy(handle);
+    check!(status, "Could not free nvjpeg handle. ");
+
+    Ok(([channel0, channel1, channel2], widths[0], heights[0]))
+}
+
+pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // let device = &*Box::leak(Box::new(CUDA::new(0).unwrap()));
     // print current directory at start
     let args = Args::parse();
     let device = static_cuda();
     unsafe {
+        // let mut decoder = jpeg_decoder::JpegDecoder::new().unwrap();
+ 
+        let raw_data = std::fs::read(args.image_path).unwrap();
+        let (channels, width, height) = decode_raw_jpeg(&raw_data, device).unwrap();
+
+        
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();
             let window_builder = glutin::window::WindowBuilder::new()
@@ -75,7 +162,7 @@ pub fn main() {
                 .with_resizable(false)
                 .with_inner_size(glutin::dpi::LogicalSize::new(1024.0, 768.0));
             let window = glutin::ContextBuilder::new()
-                .with_vsync(false)
+                .with_vsync(true)
                 .build_windowed(window_builder, &event_loop)
                 .unwrap()
                 .make_current()
@@ -95,7 +182,7 @@ pub fn main() {
             in vec2 position;
             in vec2 tex_coords;
             out vec2 v_tex_coords;
-            
+
             void main() {
                 gl_Position = vec4(position, 0.0, 1.0);
                 v_tex_coords = tex_coords;
@@ -139,38 +226,6 @@ pub fn main() {
             gl.detach_shader(program, shader);
             gl.delete_shader(shader);
         }
-
-        let mut decoder = jpeg_decoder::JpegDecoder::new().unwrap();
-
-        let mut n_components = 0;
-        let mut subsampling: nvjpegChromaSubsampling_t = 0;
-        let mut widths = [0, 0, 0];
-        let mut heights = [0, 0, 0];
-
-        // let raw_data = std::fs::read("./maze_128x128.jpg").unwrap();
-        let raw_data = std::fs::read(args.image_path).unwrap();
-
-        let status = nvjpegGetImageInfo(
-            decoder.handle,
-            raw_data.as_ptr(),
-            raw_data.len(),
-            &mut n_components,
-            &mut subsampling,
-            widths.as_mut_ptr(),
-            heights.as_mut_ptr(),
-        );
-
-        let width = widths[0];
-
-        let height = heights[1]; // 1080
-
-        println!("width: {}, height: {}", width, height);
-
-        decoder.width = width as usize;
-        decoder.height = height as usize;
-
-        decoder.decode_rgb(&raw_data).unwrap();
-
         let texture = gl.create_texture().expect("Cannot create texture");
         gl.active_texture(TEXTURE0);
         gl.bind_texture(glow::TEXTURE_2D, Some(texture));
@@ -220,11 +275,14 @@ pub fn main() {
 
         const CU_GRAPHICS_REGISTER_FLAGS_SURFACE_LDST: u32 = 4;
         let mut cuda_resource: CUgraphicsResource = std::ptr::null_mut();
-        cuGraphicsGLRegisterImage(
-            &mut cuda_resource,
-            texture.0.into(),
-            glow::TEXTURE_2D,
-            CU_GRAPHICS_REGISTER_FLAGS_SURFACE_LDST,
+        check_error(
+            cuGraphicsGLRegisterImage(
+                &mut cuda_resource,
+                texture.0.into(),
+                glow::TEXTURE_2D,
+                CU_GRAPHICS_REGISTER_FLAGS_SURFACE_LDST,
+            ),
+            "cannot register gl image",
         );
 
         check_error(
@@ -276,7 +334,7 @@ pub fn main() {
                 len: (width * height * 4) as usize,
                 p: std::marker::PhantomData,
             },
-            device: Some(&device),
+            device: Some(device),
             ident: None,
         };
 
@@ -287,13 +345,13 @@ pub fn main() {
                 len: (width * height * 4) as usize,
                 p: std::marker::PhantomData,
             },
-            device: Some(&device),
+            device: Some(device),
             ident: None,
         };
 
         fill_cuda_surface(&mut surface, width as usize, height as usize, 255, 120, 120).unwrap();
 
-        let channels = decoder.channels.as_ref().unwrap();
+        // let channels = decoder.channels.as_ref().unwrap();
         interleave_rgb(
             &mut surface,
             &channels[0],
@@ -349,7 +407,8 @@ pub fn main() {
 
         let mut mode = Mode::None;
 
-        let mut updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
+        let mut updated_labels = custos::Buffer::new(device, width as usize * height as usize * 4);
+        // let mut updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
 
         let mut threshold = 20;
 
@@ -450,8 +509,8 @@ pub fn main() {
                         is_synthetic,
                     } => {
                         // switch between views with key press (label values)
-                        let channels: &[custos::Buffer<'_, u8, CUDA>; 3] =
-                            decoder.channels.as_ref().unwrap();
+                        let channels: &[custos::Buffer<'_, u8, CUDA>; 3] = &channels;
+                        // decoder.channels.as_ref().unwrap();
                         if input.state == glutin::event::ElementState::Pressed {
                             let Some(keycode) = input.virtual_keycode.as_ref() else {
                                 return;
@@ -472,7 +531,7 @@ pub fn main() {
                                     channels,
                                     width as usize,
                                     height as usize,
-                                    device,
+                                    &device,
                                     &mut updated_labels,
                                     threshold,
                                 );
@@ -487,7 +546,7 @@ pub fn main() {
                                     channels,
                                     width as usize,
                                     height as usize,
-                                    device,
+                                    &device,
                                     &mut updated_labels,
                                     threshold,
                                 );
@@ -502,7 +561,7 @@ pub fn main() {
                                     channels,
                                     width as usize,
                                     height as usize,
-                                    device,
+                                    &device,
                                     &mut updated_labels,
                                     threshold,
                                 );
@@ -518,7 +577,7 @@ pub fn main() {
                                         channels,
                                         width as usize,
                                         height as usize,
-                                        device,
+                                        &device,
                                         &mut updated_labels,
                                         threshold,
                                     );
@@ -535,14 +594,14 @@ pub fn main() {
     }
 }
 
-fn update_on_mode_change(
+fn update_on_mode_change<'a>(
     mode: &Mode,
     surface: &mut CUBuffer<u8>,
     surface_texture: &mut CUBuffer<u8>,
     channels: &[CUBuffer<u8>],
     width: usize,
     height: usize,
-    device: &CUDA,
+    device: &'static CUDA,
     updated_labels: &mut CUBuffer<u8>,
     threshold: i32,
 ) {
@@ -560,7 +619,9 @@ fn update_on_mode_change(
             device.stream().sync().unwrap();
         }
         Mode::Labels => {
-            let mut labels: custos::Buffer<'_, u8, CUDA> = buf![0u8; width * height * 4].to_cuda();
+            let mut labels: custos::Buffer<'static, u8, CUDA> =
+                custos::Buffer::new(device, width * height * 4);
+            // let mut labels: custos::Buffer<'_, u8, CUDA> = buf![0u8; width * height * 4].to_dev::<crate::CUDA>();
 
             label_pixels_combinations(&mut labels, width, height).unwrap();
 
@@ -569,7 +630,7 @@ fn update_on_mode_change(
             // *updated_labels = buf![0u8; width * height * 4].to_cuda();
             *updated_labels = labels.clone(); // only for mouse pos debug
 
-            let mut has_updated: custos::Buffer<'_, i32, CUDA> = CUBuffer::<i32>::new(device, 1);
+            let mut has_updated: custos::Buffer<'_, _, CUDA> = CUBuffer::<_>::new(device, 1);
 
             let start = Instant::now();
 
@@ -577,7 +638,7 @@ fn update_on_mode_change(
 
             let mut updates = true;
 
-            let offsets = [(0, 0), (0,1), (1,0), (1, 1)];
+            let offsets = [(0, 0), (0, 1), (1, 0), (1, 1)];
 
             while updates {
                 // println!("epoch: {epoch}");
@@ -618,7 +679,7 @@ fn update_on_mode_change(
                                 threshold,
                                 &mut has_updated,
                                 offset_y,
-                                offset_x
+                                offset_x,
                             )
                             .unwrap();
                             ping = true;
@@ -640,8 +701,9 @@ fn update_on_mode_change(
                     }
                 }
             }
-
-            /*for i in final_iter..final_iter+10 {
+/* 
+            let final_iter = 0;
+            for i in final_iter..final_iter+1000 {
                 if i % 2 == 0 {
                     label_components_master_label(
                         &updated_labels,
@@ -698,12 +760,16 @@ fn update_on_mode_change(
         }
         Mode::MouseHighlight => {}
         Mode::RowWise => {
-            let mut labels = buf![0u8; width * height * 4].to_cuda();
+            let mut labels: custos::Buffer<u8, CUDA> =
+                custos::Buffer::new(&device, width * height * 4);
+            // let mut labels = buf![0u8; width * height * 4].to_cuda();
 
             label_pixels_combinations(&mut labels, width, height).unwrap();
 
             device.stream().sync().unwrap();
-            *updated_labels = buf![0u8; width * height * 4].to_cuda();
+
+            // *updated_labels = buf![0u8; width * height * 4].to_cuda();
+            *updated_labels = custos::Buffer::new(&device, width * height * 4);
 
             let mut has_updated: custos::Buffer<'_, u8, CUDA> = CUBuffer::<u8>::new(device, 1);
 

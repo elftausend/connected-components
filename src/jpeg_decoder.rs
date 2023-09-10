@@ -32,7 +32,6 @@ impl JpegDecoder {
         let mut jpeg_state: nvjpegJpegState_t = null_mut();
         let status = nvjpegJpegStateCreate(handle, &mut jpeg_state);
         check!(status, "Could not create jpeg state. ");
-
         let mut image: nvjpegImage_t = nvjpegImage_t::new();
 
         Ok(JpegDecoder {
@@ -84,7 +83,6 @@ impl JpegDecoder {
             self.image.channel[2] = channels[2].cu_ptr() as *mut _;
             self.channels = Some(channels);
         }
-
         let status = nvjpegDecode(
             self.handle,
             self.jpeg_state,
@@ -92,7 +90,8 @@ impl JpegDecoder {
             raw_data.len(),
             nvjpegOutputFormat_t_NVJPEG_OUTPUT_RGB,
             &mut self.image,
-            static_cuda().stream().0 as *mut _,
+            // static_cuda().stream().0 as *mut _,
+            null_mut()
         );
         check!(status, "Could not decode image. ");
         Ok(())
