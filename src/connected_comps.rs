@@ -68,6 +68,25 @@ pub fn label_pixels_combinations(
     )
 }
 
+pub fn label_with_connection_info(
+    target: &mut CUBuffer<u32>,
+    red: &CUBuffer<u8>,
+    green: &CUBuffer<u8>,
+    blue: &CUBuffer<u8>,
+    width: usize,
+    height: usize
+) {
+    launch_kernel(
+        target.device(),
+        [64, 135, 1],
+        [32, 8, 1],
+        0,
+        CUDA_SOURCE,
+        "labelWithConnectionInfo",
+        &[target,red, green, blue, &width, &height],
+    ).unwrap()
+}
+
 pub fn label_pixels_rowed(
     target: &mut CUBuffer<u8>,
     width: usize,
@@ -116,6 +135,44 @@ pub fn label_components(
     )
 }
 
+pub fn label_components_shared_with_connections(
+    input: &CUBuffer<u32>,
+    out: &mut CUBuffer<u32>,
+    red: &CUBuffer<u8>,
+    green: &CUBuffer<u8>,
+    blue: &CUBuffer<u8>,
+    width: usize,
+    height: usize,
+    threshold: i32,
+    has_updated: &mut CUBuffer<i32>,
+    offset_y: u8,
+    offset_x: u8,
+) -> custos::Result<()> {
+    launch_kernel(
+        input.device(),
+        [width as u32 / 32, height as u32 / 32, 1],
+        // [16, 16, 1],
+        [32, 32, 1],
+        // [64, 34, 1],
+        // [32, 32, 1],
+        0,
+        CUDA_SOURCE,
+        "labelComponentsSharedWithConnections",
+        &[
+            input,
+            out,
+            &width,
+            &height,
+            red,
+            green,
+            blue,
+            &threshold,
+            has_updated,
+            &offset_y,
+            &offset_x,
+        ],
+    )
+}
 pub fn label_components_shared(
     input: &CUBuffer<u8>,
     out: &mut CUBuffer<u8>,

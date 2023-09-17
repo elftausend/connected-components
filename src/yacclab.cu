@@ -116,7 +116,7 @@ __global__ void Propagate(cuda::PtrStepSzb img, cuda::PtrStepSzi globalLabels, i
 
     int threshold = 10;
     
-    {
+    /*{
     int currentLabel = labels[threadIdx.y+1][32-threadIdx.x];
     int currentPixel = (int) pixels[threadIdx.y+1][32-threadIdx.x];
     int pixel = (int) pixels[threadIdx.y+1][33-threadIdx.x];
@@ -130,7 +130,7 @@ __global__ void Propagate(cuda::PtrStepSzb img, cuda::PtrStepSzi globalLabels, i
             // thread_changed = true;  
         }
     }
-    }
+    }*/
     
     // if (thread_changed) {
         // something_changed[0] = true;
@@ -181,13 +181,15 @@ public:
         int* d_changed_ptr;
         cudaMalloc(&d_changed_ptr, 1);
 
-        while (changed < 100) {     
+        while (changed < 11) {     
             // changed = 0;
             changed += 1;
             cudaMemset(d_changed_ptr, 0, 1);
 
             for (int i = 0; i < 4; i++) {
                 Propagate << <grid_size_, block_size_ >> > (d_img_, d_img_labels_, d_changed_ptr, yOffsets[i], xOffsets[i]);
+
+                cudaDeviceSynchronize();
             }
 
             // cudaMemcpy(&changed, d_changed_ptr, 1, cudaMemcpyDeviceToHost);

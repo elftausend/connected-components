@@ -9,12 +9,13 @@ use std::{
 };
 
 use clap::{arg, command, Parser};
-use connected_comps::{label_components_rowed, label_pixels_rowed};
+use connected_comps::{label_components_rowed, label_pixels_rowed, label_with_connection_info};
 use custos::{
     cuda::{api::CUstream, CUDAPtr},
     flag::AllocFlag,
     prelude::CUBuffer,
-    CUDA, static_api::static_cuda,
+    static_api::static_cuda,
+    CUDA,
 };
 use glow::*;
 use glutin::event::VirtualKeyCode;
@@ -37,6 +38,7 @@ enum Mode {
     Labels,
     MouseHighlight,
     RowWise,
+    ConnectionInfo,
 }
 
 impl Mode {
@@ -45,7 +47,8 @@ impl Mode {
             Mode::None => Mode::Labels,
             Mode::Labels => Mode::MouseHighlight,
             Mode::MouseHighlight => Mode::RowWise,
-            Mode::RowWise => Mode::None,
+            Mode::RowWise => Mode::ConnectionInfo,
+            Mode::ConnectionInfo => Mode::None,
         };
         *self = mode;
     }
@@ -58,6 +61,7 @@ impl From<u8> for Mode {
             1 => Mode::Labels,
             2 => Mode::MouseHighlight,
             3 => Mode::RowWise,
+            8 => Mode::ConnectionInfo,
             _ => Mode::None,
         }
     }
@@ -73,7 +77,8 @@ pub struct Args {
 unsafe fn decode_raw_jpeg<'a>(
     raw_data: &[u8],
     device: &'a CUDA,
-) -> Result<([custos::Buffer<'a, u8, CUDA>; 3], i32, i32), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<([custos::Buffer<'a, u8, CUDA>; 3], i32, i32), Box<dyn std::error::Error + Send + Sync>>
+{
     let mut handle: nvjpegHandle_t = null_mut();
 
     let status = nvjpegCreateSimple(&mut handle);
@@ -150,11 +155,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let device = static_cuda();
     unsafe {
         // let mut decoder = jpeg_decoder::JpegDecoder::new().unwrap();
- 
+
         let raw_data = std::fs::read(args.image_path).unwrap();
         let (channels, width, height) = decode_raw_jpeg(&raw_data, device).unwrap();
 
-        
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();
             let window_builder = glutin::window::WindowBuilder::new()
@@ -701,7 +705,7 @@ fn update_on_mode_change<'a>(
                     }
                 }
             }
-/* 
+            /*
             let final_iter = 0;
             for i in final_iter..final_iter+1000 {
                 if i % 2 == 0 {
@@ -813,6 +817,109 @@ fn update_on_mode_change<'a>(
             println!("(master,rowwise) labeling took {:?}", start.elapsed());
             copy_to_surface(&labels, surface, width, height);
         }
+        Mode::ConnectionInfo => {
+            println!("connection info");
+
+            let mut updated_labels: custos::Buffer<u32, CUDA> =
+                custos::Buffer::new(&device, width * height);
+
+            let mut labels: custos::Buffer<u32, CUDA> =
+                custos::Buffer::new(&device, width * height);
+            // let mut labels = buf![0u8; width * height * 4].to_cuda();
+
+            label_with_connection_info(&mut labels, &channels[0], &channels[1], &channels[2], width, height);
+
+            device.stream().sync().unwrap();
+
+            // *updated_labels = labels.clone(); // only for mouse pos debug
+
+            let mut has_updated: custos::Buffer<'_, _, CUDA> = CUBuffer::<_>::new(device, 1);
+
+            let start = Instant::now();
+
+            let mut ping = true;
+
+            let mut updates = true;
+            let offsets = [(0, 0), (0, 1), (1, 0), (1, 1)];
+
+            while updates {
+                // println!("epoch: {epoch}");
+                updates = false;
+                for (offset_y, offset_x) in offsets {
+                    for i in 0..width * height * 2 {
+                        // 0..width+height
+                        let mut start = Instant::now();
+                        if i == 1 {
+                            start = Instant::now();
+                        }
+
+                        if ping {
+                            label_components_shared_with_connections(
+                                &labels,
+                                &mut updated_labels,
+                                &channels[0],
+                                &channels[1],
+                                &channels[2],
+                                width,
+                                height,
+                                threshold,
+                                &mut has_updated,
+                                offset_y,
+                                offset_x,
+                            )
+                            .unwrap();
+                            ping = false;
+                        } else {
+                            label_components_shared_with_connections(
+                                &updated_labels,
+                                &mut labels,
+                                &channels[0],
+                                &channels[1],
+                                &channels[2],
+                                width,
+                                height,
+                                threshold,
+                                &mut has_updated,
+                                offset_y,
+                                offset_x,
+                            )
+                            .unwrap();
+                            ping = true;
+                        }
+                        device.stream().sync().unwrap();
+
+                        if i == 1 {
+                            // println!("one iter of labeling took {:?}", start.elapsed());
+                        }
+
+                        if has_updated.read()[0] == 0 {
+                            // println!("iters: {i}");
+                            break;
+                        } else {
+                            updates = true;
+                        }
+
+                        has_updated.clear();
+                    }
+                }
+            }
+
+            println!("labeling took {:?}", start.elapsed());
+
+            // copy_to_surface(&labels, surface, width, height);
+            device.stream().sync().unwrap();
+/*            if ping {
+                copy_to_surface(&labels, surface, width, height);
+            } else {
+                copy_to_surface(&updated_labels, surface, width, height);
+            }
+*/
+            // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
+            // fill the core f red
+            // color_component_at_pixel_exact(&surface_texture, surface, 8, 64, width, height);
+
+            device.stream().sync().unwrap();
+        }
     }
 }
 
@@ -844,7 +951,7 @@ pub enum CUresourcetype_enum {
 use crate::connected_comps::{
     color_component_at_pixel, color_component_at_pixel_exact, copy_to_surface, fill_cuda_surface,
     interleave_rgb, label_components, label_components_master_label, label_components_shared,
-    label_pixels, label_pixels_combinations, read_pixel,
+    label_pixels, label_pixels_combinations, read_pixel, label_components_shared_with_connections,
 };
 
 pub use self::CUresourcetype_enum as CUresourcetype;
