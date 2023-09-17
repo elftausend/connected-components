@@ -414,6 +414,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut updated_labels = custos::Buffer::new(device, width as usize * height as usize * 4);
         // let mut updated_labels = buf![0u8; width as usize * height as usize * 4].to_cuda();
 
+        let mut colorless_updated_labels =
+            custos::Buffer::<u32, _>::new(device, width as usize * height as usize);
         let mut threshold = 20;
 
         event_loop.run(move |event, _, control_flow| {
@@ -473,6 +475,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                             (x / win_width as f32) * width as f32,
                             (y / win_height as f32) * height as f32,
                         );
+
                         let cursor_loc = (x as usize, y as usize);
 
                         let pixel = read_pixel(
@@ -482,7 +485,16 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                             width as usize,
                             height as usize,
                         );
-                        // println!("pixel (label): {pixel:?}");
+                        println!("pixel (label): {pixel:?}");
+
+                        let label_at = colorless_updated_labels.read()
+                            [cursor_loc.1 * width as usize + cursor_loc.0];
+                        let conns = label_at & 0xF0000000;
+                        println!(
+                            "label_at: {}, conns: {}",
+                            label_at & 0x0FFFFFFF,
+                            conns >> 28
+                        );
 
                         if mode == Mode::MouseHighlight {
                             copy_to_surface(
@@ -537,6 +549,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     height as usize,
                                     &device,
                                     &mut updated_labels,
+                                    &mut colorless_updated_labels,
                                     threshold,
                                 );
                             }
@@ -552,6 +565,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     height as usize,
                                     &device,
                                     &mut updated_labels,
+                                    &mut colorless_updated_labels,
                                     threshold,
                                 );
                             }
@@ -567,6 +581,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     height as usize,
                                     &device,
                                     &mut updated_labels,
+                                    &mut colorless_updated_labels,
                                     threshold,
                                 );
                             }
@@ -583,6 +598,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         height as usize,
                                         &device,
                                         &mut updated_labels,
+                                        &mut colorless_updated_labels,
                                         threshold,
                                     );
                                 }
@@ -607,6 +623,7 @@ fn update_on_mode_change<'a>(
     height: usize,
     device: &'static CUDA,
     updated_labels: &mut CUBuffer<u8>,
+    colorless_updated_labels: &mut CUBuffer<u32>,
     threshold: i32,
 ) {
     match mode {
@@ -820,17 +837,31 @@ fn update_on_mode_change<'a>(
         Mode::ConnectionInfo => {
             println!("connection info");
 
-            let mut updated_labels: custos::Buffer<u32, CUDA> =
+            let mut pong_updated_labels: custos::Buffer<u32, CUDA> =
                 custos::Buffer::new(&device, width * height);
 
             let mut labels: custos::Buffer<u32, CUDA> =
                 custos::Buffer::new(&device, width * height);
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
 
-            label_with_connection_info(&mut labels, &channels[0], &channels[1], &channels[2], width, height);
+            label_with_connection_info(
+                &mut labels,
+                &channels[0],
+                &channels[1],
+                &channels[2],
+                width,
+                height,
+            );
+            // println!("labels: {:?}", labels.read());
+            // return;
 
             device.stream().sync().unwrap();
-
+            // *colorless_updated_labels = labels.clone();
+            copy_to_surface_unsigned(&labels, surface, width, height);
+            device.stream().sync().unwrap();
+            // let sus = &pong_updated_labels.read()[10000..20000];
+            // println!("sus: {sus:?}");
+            // return;
             // *updated_labels = labels.clone(); // only for mouse pos debug
 
             let mut has_updated: custos::Buffer<'_, _, CUDA> = CUBuffer::<_>::new(device, 1);
@@ -856,7 +887,7 @@ fn update_on_mode_change<'a>(
                         if ping {
                             label_components_shared_with_connections(
                                 &labels,
-                                &mut updated_labels,
+                                &mut pong_updated_labels,
                                 &channels[0],
                                 &channels[1],
                                 &channels[2],
@@ -871,7 +902,7 @@ fn update_on_mode_change<'a>(
                             ping = false;
                         } else {
                             label_components_shared_with_connections(
-                                &updated_labels,
+                                &pong_updated_labels,
                                 &mut labels,
                                 &channels[0],
                                 &channels[1],
@@ -904,16 +935,22 @@ fn update_on_mode_change<'a>(
                 }
             }
 
+            device.stream().sync().unwrap();
             println!("labeling took {:?}", start.elapsed());
 
             // copy_to_surface(&labels, surface, width, height);
-            device.stream().sync().unwrap();
-/*            if ping {
-                copy_to_surface(&labels, surface, width, height);
+            if ping {
+                *colorless_updated_labels = labels.clone();
+                copy_to_surface_unsigned(&labels, surface, width, height);
+                // println!("labels: {:?}", labels.read());
+                copy_to_interleaved_buf(&labels, updated_labels, width, height);
             } else {
-                copy_to_surface(&updated_labels, surface, width, height);
+                *colorless_updated_labels = pong_updated_labels.clone();
+                // println!("labels: {:?}", pong_updated_labels.read());
+                copy_to_surface_unsigned(&pong_updated_labels, surface, width, height);
+                copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
             }
-*/
+
             // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
             // fill the core f red
             // color_component_at_pixel_exact(&surface_texture, surface, 8, 64, width, height);
@@ -949,9 +986,10 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
 use crate::connected_comps::{
-    color_component_at_pixel, color_component_at_pixel_exact, copy_to_surface, fill_cuda_surface,
-    interleave_rgb, label_components, label_components_master_label, label_components_shared,
-    label_pixels, label_pixels_combinations, read_pixel, label_components_shared_with_connections,
+    color_component_at_pixel, color_component_at_pixel_exact, copy_to_interleaved_buf,
+    copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, interleave_rgb, label_components,
+    label_components_master_label, label_components_shared,
+    label_components_shared_with_connections, label_pixels, label_pixels_combinations, read_pixel,
 };
 
 pub use self::CUresourcetype_enum as CUresourcetype;

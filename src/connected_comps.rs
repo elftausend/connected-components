@@ -74,7 +74,7 @@ pub fn label_with_connection_info(
     green: &CUBuffer<u8>,
     blue: &CUBuffer<u8>,
     width: usize,
-    height: usize
+    height: usize,
 ) {
     launch_kernel(
         target.device(),
@@ -83,8 +83,9 @@ pub fn label_with_connection_info(
         0,
         CUDA_SOURCE,
         "labelWithConnectionInfo",
-        &[target,red, green, blue, &width, &height],
-    ).unwrap()
+        &[target, red, green, blue, &width, &height],
+    )
+    .unwrap()
 }
 
 pub fn label_pixels_rowed(
@@ -281,7 +282,40 @@ pub fn copy_to_surface(
     )
     .unwrap()
 }
-
+pub fn copy_to_surface_unsigned(
+    labels: &CUBuffer<u32>,
+    surface: &mut CUBuffer<u8>,
+    width: usize,
+    height: usize,
+) {
+    launch_kernel(
+        labels.device(),
+        [64, 135, 1],
+        [32, 8, 1],
+        0,
+        CUDA_SOURCE,
+        "copyToSurfaceUnsigned",
+        &[labels, surface, &width, &height],
+    )
+    .unwrap()
+}
+pub fn copy_to_interleaved_buf(
+    labels: &CUBuffer<u32>,
+    surface: &mut CUBuffer<u8>,
+    width: usize,
+    height: usize,
+) {
+    launch_kernel(
+        labels.device(),
+        [64, 135, 1],
+        [32, 8, 1],
+        0,
+        CUDA_SOURCE,
+        "copyToInterleavedBuf",
+        &[labels, surface, &width, &height],
+    )
+    .unwrap()
+}
 pub fn color_component_at_pixel(
     texture: &CUBuffer<u8>,
     surface: &mut CUBuffer<u8>,

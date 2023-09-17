@@ -76,15 +76,15 @@ extern "C"{
         if (x >= width || y >= height) {
             return;
         } 
-        int threshold = 20;
+        int threshold = 70;
 
         unsigned int connections = 0;
 
-        uchar4 currentPixel = make_uchar4(R[y * width + x], G[y * width + x], B[y * width + x], 0);
+        uchar4 currentPixel = make_uchar4(R[y * width + x], G[y * width + x], B[y * width + x], 255);
 
         // right 
         if (x < width-1) {
-            uchar4 rightPixel = make_uchar4(R[y * width + x +1], G[y * width + x +1], B[y * width + x+1], 0);
+            uchar4 rightPixel = make_uchar4(R[y * width + x +1], G[y * width + x +1], B[y * width + x+1], 255);
             // uchar4 rightPixel = img[y * width + x + 1];
             
             if (abs(rightPixel.x - currentPixel.x) < threshold && abs(rightPixel.y - currentPixel.y) < threshold && abs(rightPixel.z - currentPixel.z) < threshold) {    
@@ -93,7 +93,7 @@ extern "C"{
         }
         // left
         if (x > 0) {
-            uchar4 leftPixel = make_uchar4(R[y * width + x -1], G[y * width + x -1], B[y * width + x-1], 0); 
+            uchar4 leftPixel = make_uchar4(R[y * width + x -1], G[y * width + x -1], B[y * width + x-1], 255); 
             // uchar4 leftPixel = img[y * width + x - 1];
 
           if (abs(leftPixel.x - currentPixel.x) < threshold && abs(leftPixel.y - currentPixel.y) < threshold && abs(leftPixel.z - currentPixel.z) < threshold) {    
@@ -103,7 +103,7 @@ extern "C"{
 
         if (y < height -1) { 
             // down 
-            uchar4 downPixel = make_uchar4(R[(y+1) * width + x ], G[(y +1) * width + x], B[(y+ 1) * width + x], 0);
+            uchar4 downPixel = make_uchar4(R[(y+1) * width + x ], G[(y +1) * width + x], B[(y+ 1) * width + x], 255);
             // uchar4 downPixel = img[(y + 1) * width + x];
 
             if (abs(downPixel.x - currentPixel.x) < threshold && abs(downPixel.y - currentPixel.y) < threshold && abs(downPixel.z - currentPixel.z) < threshold) {    
@@ -112,17 +112,17 @@ extern "C"{
         }
         if (y > 0) { 
             // up
-            uchar4 upPixel = make_uchar4(R[(y-1) * width + x ], G[(y -1) * width + x], B[(y- 1) * width + x], 0);
+            uchar4 upPixel = make_uchar4(R[(y-1) * width + x ], G[(y -1) * width + x], B[(y- 1) * width + x], 255);
             // uchar4 upPixel = img[(y - 1) * width + x];
 
             if (abs(upPixel.x - currentPixel.x) < threshold && abs(upPixel.y - currentPixel.y) < threshold && abs(upPixel.z - currentPixel.z) < threshold) {    
-                connections |= (1u << 28); 
+                connections |= (1u << 28);
             }
         }        
         unsigned int labelIdx = y * width + x;
         unsigned int label = labelIdx + 1;
         label |= connections;
-
+        // printf("label: %u \n", label);
         labels[labelIdx] = label;
 
     }
@@ -142,7 +142,7 @@ extern "C"{
             return;
         }
 
-        __shared__ uchar4 pixels[34][34];
+        // __shared__ uchar4 pixels[34][34];
         __shared__ unsigned int labels[34][34];
 
         int newY = y;// - blockIdx.y;
@@ -156,16 +156,16 @@ extern "C"{
             if (upperOverlap >= 0) {
 
                 labels[0][threadIdx.x+1] = input[upperOverlapIdx];
-                pixels[0][threadIdx.x+1] = make_uchar4(R[upperOverlapIdx], G[upperOverlapIdx], B[upperOverlapIdx], 255);
+                // pixels[0][threadIdx.x+1] = make_uchar4(R[upperOverlapIdx], G[upperOverlapIdx], B[upperOverlapIdx], 255);
 
                 //maybe not needed, diagonals
                 if (threadIdx.x == 0) {
                     labels[0][0] = input[upperOverlapIdx - 1];
-                    pixels[0][0] = make_uchar4(R[upperOverlapIdx - 1], G[upperOverlapIdx - 1], B[upperOverlapIdx - 1], 255);
+                    // pixels[0][0] = make_uchar4(R[upperOverlapIdx - 1], G[upperOverlapIdx - 1], B[upperOverlapIdx - 1], 255);
                 }
                 if (threadIdx.x == 31) {
                     labels[0][33] = input[upperOverlapIdx + 1];
-                    pixels[0][33] = make_uchar4(R[upperOverlapIdx + 1], G[upperOverlapIdx + 1], B[upperOverlapIdx + 1], 255);
+                    // pixels[0][33] = make_uchar4(R[upperOverlapIdx + 1], G[upperOverlapIdx + 1], B[upperOverlapIdx + 1], 255);
                 }
             }
         }
@@ -175,16 +175,16 @@ extern "C"{
             int lowerOverlapIdx = lowerOverlap * width + x;
             if (lowerOverlap < height) {                
                 labels[33][threadIdx.x+1] = input[lowerOverlapIdx];
-                pixels[33][threadIdx.x+1] = make_uchar4(R[lowerOverlapIdx], G[lowerOverlapIdx], B[lowerOverlapIdx], 255);
+                // pixels[33][threadIdx.x+1] = make_uchar4(R[lowerOverlapIdx], G[lowerOverlapIdx], B[lowerOverlapIdx], 255);
 
                 //maybe not needed, diagonals
                 if (threadIdx.x == 0) {
                     labels[33][0] = input[lowerOverlapIdx - 1];
-                    pixels[33][0] = make_uchar4(R[lowerOverlapIdx - 1], G[lowerOverlapIdx - 1], B[lowerOverlapIdx - 1], 255);
+                    // pixels[33][0] = make_uchar4(R[lowerOverlapIdx - 1], G[lowerOverlapIdx - 1], B[lowerOverlapIdx - 1], 255);
                 }
                 if (threadIdx.x == 31) {
                     labels[33][33] = input[lowerOverlapIdx + 1];
-                    pixels[33][33] = make_uchar4(R[lowerOverlapIdx + 1], G[lowerOverlapIdx + 1], B[lowerOverlapIdx + 1], 255);
+                    // pixels[33][33] = make_uchar4(R[lowerOverlapIdx + 1], G[lowerOverlapIdx + 1], B[lowerOverlapIdx + 1], 255);
                 }
             }
         }
@@ -194,7 +194,7 @@ extern "C"{
             int leftOverlapIdx = y * width + leftOverlap;
             if (leftOverlap >= 0) {
                 labels[threadIdx.y+1][0] = input[leftOverlapIdx];
-                pixels[threadIdx.y+1][0] = make_uchar4(R[leftOverlapIdx], G[leftOverlapIdx], B[leftOverlapIdx], 255);
+                // pixels[threadIdx.y+1][0] = make_uchar4(R[leftOverlapIdx], G[leftOverlapIdx], B[leftOverlapIdx], 255);
             }
         }
 
@@ -203,16 +203,17 @@ extern "C"{
             int rightOverlapIdx = y * width + rightOverlap;
             if (rightOverlap < width) {
                 labels[threadIdx.y+1][33] = input[rightOverlapIdx];
-                pixels[threadIdx.y+1][33] = make_uchar4(R[rightOverlapIdx], G[rightOverlapIdx], B[rightOverlapIdx], 255);
+                // pixels[threadIdx.y+1][33] = make_uchar4(R[rightOverlapIdx], G[rightOverlapIdx], B[rightOverlapIdx], 255);
             }
         }
 
-        pixels[threadIdx.y+1][threadIdx.x+1] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
+        // pixels[threadIdx.y+1][threadIdx.x+1] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
         labels[threadIdx.y+1][threadIdx.x+1] = input[y * width + x];
         __syncthreads();
 
 
         int outIdx = y * width + x;
+
 
         // right        
         {
@@ -220,24 +221,22 @@ extern "C"{
         unsigned int label = labels[threadIdx.y+1][33-threadIdx.x];
         if ((currentLabel & 0b10000000000000000000000000000000) >> 31) {
             if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
-                labels[threadIdx.y+1][32-threadIdx.x] = label;       
+                labels[threadIdx.y+1][32-threadIdx.x] |= label & 0x0FFFFFFF;       
                 // hasUpdated[0] = 1; 
                 atomicOr(hasUpdated, 1);
             }
         }
         }
         __syncthreads();
-/*
+
         // down
         {
-        uchar4 currentLabel = labels[32-threadIdx.y][threadIdx.x+1];
-        uchar4 currentPixel = pixels[32-threadIdx.y][threadIdx.x+1];
+        unsigned int currentLabel = labels[32-threadIdx.y][threadIdx.x+1];
 
-        uchar4 pixel = pixels[33-threadIdx.y][threadIdx.x+1];
-        uchar4 label = labels[33-threadIdx.y][threadIdx.x+1];
-        if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
-            if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
-                labels[32-threadIdx.y][threadIdx.x+1] = label;
+        unsigned int label = labels[33-threadIdx.y][threadIdx.x+1];
+        if ((currentLabel & 0b00100000000000000000000000000000) >> 29) {
+            if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
+                labels[32-threadIdx.y][threadIdx.x+1] |= label & 0x0FFFFFFF;
                 atomicOr(hasUpdated, 1);
             }
         }
@@ -246,37 +245,30 @@ extern "C"{
 
         //left
         {
-        uchar4 currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
-        uchar4 currentPixel = pixels[threadIdx.y+1][threadIdx.x+1];
-        uchar4 pixel = pixels[threadIdx.y+1][threadIdx.x];
-        uchar4 label = labels[threadIdx.y+1][threadIdx.x];
+        unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
+        unsigned int label = labels[threadIdx.y+1][threadIdx.x];
 
-        if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
-            if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
-                labels[threadIdx.y+1][threadIdx.x+1] = label;
+        if ((currentLabel & 0b01000000000000000000000000000000) >> 30) {
+            if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
+                labels[threadIdx.y+1][threadIdx.x+1] |= label & 0x0FFFFFFF;
                 atomicOr(hasUpdated, 1);
             }
         }
         }
         __syncthreads();
 
-        // up
+         // up
         {
-        uchar4 currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
-        uchar4 currentPixel = pixels[threadIdx.y+1][threadIdx.x+1];
-
-        uchar4 pixel = pixels[threadIdx.y][threadIdx.x+1];
-        uchar4 label = labels[threadIdx.y][threadIdx.x+1];
-        if (abs(pixel.x - currentPixel.x) < threshold && abs(pixel.y - currentPixel.y) < threshold && abs(pixel.z - currentPixel.z) < threshold) {    
-            if ((int) currentLabel.x + (int) currentLabel.y + (int) currentLabel.z < (int) label.x + (int) label.y + (int) label.z) {
-                labels[threadIdx.y+1][threadIdx.x+1] = label;
+        unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
+        unsigned int label = labels[threadIdx.y][threadIdx.x+1];
+        if ((currentLabel & 0b00010000000000000000000000000000) >> 28) {
+            if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
+                labels[threadIdx.y+1][threadIdx.x+1] |= label & 0x0FFFFFFF;
                 atomicOr(hasUpdated, 1);
             }
         }
         }
         __syncthreads();
-*/
-
         out[outIdx] = labels[threadIdx.y+1][threadIdx.x+1];
     }
     __global__ void labelPixelsRowed(uchar4* target, int width, int height) {
@@ -734,9 +726,9 @@ extern "C"{
         out[y * width + x] = currentLabel;
     }
 
-    __global__ void copyToSurfaceUnsigned(unsigned char* input, cudaSurfaceObject_t target, int width, int height) {
-        int x = blockIdx.x * blockDim.x + threadIdx.x;
-        int y = blockIdx.y * blockDim.y + threadIdx.y;
+    __global__ void copyToSurfaceUnsigned(unsigned int* input, cudaSurfaceObject_t target, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
         if (x >= width) {
             return;
@@ -745,10 +737,49 @@ extern "C"{
         if (y >= height) {
             return;
         }
-        
-        uchar4 color = input[y * width + x];
-        surf2Dwrite(color, target, x * sizeof(uchar4), height -1 - y);
+        unsigned int idx = input[y * width + x];
+        unsigned int labelIdx = idx & 0x0FFFFFFF;
+        unsigned char red = ( (unsigned char) ((double) labelIdx / pow(2.0, 32.0- 4.0)) * 255.0);
+       
+        unsigned char green = ( (unsigned char) ((double) labelIdx / pow(2.0, 16.0-4.0)) * 255.0);
+        unsigned char blue = ( (unsigned char) ((double) labelIdx / pow(2.0, 8.0)) * 255.0);
+        surf2Dwrite(make_uchar4(red, green, blue, 255), target, x * sizeof(uchar4), height - 1 - y);
     }
+    __global__ void copyToInterleavedBuf(unsigned int* input, uchar4* target, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (x >= width) {
+            return;
+        }
+        
+        if (y >= height) {
+            return;
+        }
+        unsigned int idx = input[y * width + x];
+        unsigned int labelIdx = idx & 0x0FFFFFFF;
+        unsigned char red = ( (unsigned char) ((double) labelIdx / pow(2.0, 32.0-4.0)) * 255.0);
+       
+        unsigned char green = ( (unsigned char) ((double) labelIdx / pow(2.0, 16.0-4.0)) * 255.0);
+        unsigned char blue = ( (unsigned char) ((double) labelIdx / pow(2.0, 8.0)) * 255.0);
+        // printf("labelid: %d, %d, %d, %d \n", labelIdx, red, green, blue);
+        target[y * width + x] = make_uchar4(red, green, blue, 255);
+    }
+    /*__global__ void readLabelValue(unsigned int* input, uchar4* target, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (x >= width) {
+            return;
+        }
+        
+        if (y >= height) {
+            return;
+        }
+        unsigned int idx = input[y * width + x];
+        unsigned int labelIdx = idx & 0x0FFFFFFF;
+        printf("%d", labelIdx);
+    }*/
     __global__ void copyToSurface(uchar4* input, cudaSurfaceObject_t target, int width, int height) {
         int x = blockIdx.x * blockDim.x + threadIdx.x;
         int y = blockIdx.y * blockDim.y + threadIdx.y;
