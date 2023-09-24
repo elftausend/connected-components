@@ -139,9 +139,6 @@ pub fn label_components(
 pub fn label_components_shared_with_connections(
     input: &CUBuffer<u32>,
     out: &mut CUBuffer<u32>,
-    red: &CUBuffer<u8>,
-    green: &CUBuffer<u8>,
-    blue: &CUBuffer<u8>,
     width: usize,
     height: usize,
     threshold: i32,
@@ -151,7 +148,7 @@ pub fn label_components_shared_with_connections(
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
-        [width as u32 / 32, height as u32 / 32, 1],
+        [width as u32 / 32 + 1, height as u32 / 32 + 1, 1],
         // [16, 16, 1],
         [32, 32, 1],
         // [64, 34, 1],
@@ -164,9 +161,6 @@ pub fn label_components_shared_with_connections(
             out,
             &width,
             &height,
-            red,
-            green,
-            blue,
             &threshold,
             has_updated,
             &offset_y,

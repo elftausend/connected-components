@@ -173,7 +173,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap();
             let gl =
                 glow::Context::from_loader_function(|s| window.get_proc_address(s) as *const _);
-            (gl, "#version 410", window, event_loop)
+            (gl, "#version 140", window, event_loop)
         };
 
         //gl.enable(glow::BLEND);
@@ -487,14 +487,23 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                         println!("pixel (label): {pixel:?}");
 
-                        let label_at = colorless_updated_labels.read()
-                            [cursor_loc.1 * width as usize + cursor_loc.0];
-                        let conns = label_at & 0xF0000000;
-                        println!(
-                            "label_at: {}, conns: {}",
-                            label_at & 0x0FFFFFFF,
-                            conns >> 28
-                        );
+                        let label_at = colorless_updated_labels
+                            .read()
+                            .get(cursor_loc.1 * width as usize + cursor_loc.0)
+                            .copied();
+                        if let Some(label_at) = label_at {
+                            let conns = label_at & 0xF0000000;
+                            let label = label_at & 0x0FFFFFFF;
+                            let blue = label & 255;
+                            let green = (label >> 8) & 255;
+                            let red = (label >> 16) & 255;
+                            println!(
+                                "label_at: {}, conns: {}, bgr: {:?}",
+                                label,
+                                conns >> 28,
+                                (blue, green, red)
+                            );
+                        }
 
                         if mode == Mode::MouseHighlight {
                             copy_to_surface(
@@ -852,12 +861,14 @@ fn update_on_mode_change<'a>(
                 width,
                 height,
             );
+            
             // println!("labels: {:?}", labels.read());
             // return;
-
+            
             device.stream().sync().unwrap();
-            // *colorless_updated_labels = labels.clone();
-            copy_to_surface_unsigned(&labels, surface, width, height);
+            let mut pong_updated_labels = labels.clone();
+            *colorless_updated_labels = labels.clone();
+            // copy_to_surface_unsigned(&labels, surface, width, height);
             device.stream().sync().unwrap();
             // let sus = &pong_updated_labels.read()[10000..20000];
             // println!("sus: {sus:?}");
@@ -877,20 +888,28 @@ fn update_on_mode_change<'a>(
                 // println!("epoch: {epoch}");
                 updates = false;
                 for (offset_y, offset_x) in offsets {
-                    for i in 0..width * height * 2 {
+                    loop {
+                        // label_components_shared_with_connections(
+                        //         &labels,
+                        //         &mut unsafe { labels.shallow() },
+                        //         width,
+                        //         height,
+                        //         threshold,
+                        //         &mut has_updated,
+                        //         offset_y,
+                        //         offset_x,
+                        //     )
+                        //     .unwrap();
+
                         // 0..width+height
                         let mut start = Instant::now();
-                        if i == 1 {
-                            start = Instant::now();
-                        }
-
+                        // if i == 1 {
+                        // start = Instant::now();
+                        // }
                         if ping {
                             label_components_shared_with_connections(
                                 &labels,
                                 &mut pong_updated_labels,
-                                &channels[0],
-                                &channels[1],
-                                &channels[2],
                                 width,
                                 height,
                                 threshold,
@@ -904,9 +923,6 @@ fn update_on_mode_change<'a>(
                             label_components_shared_with_connections(
                                 &pong_updated_labels,
                                 &mut labels,
-                                &channels[0],
-                                &channels[1],
-                                &channels[2],
                                 width,
                                 height,
                                 threshold,
@@ -919,9 +935,9 @@ fn update_on_mode_change<'a>(
                         }
                         device.stream().sync().unwrap();
 
-                        if i == 1 {
-                            // println!("one iter of labeling took {:?}", start.elapsed());
-                        }
+                        // if i == 1 {
+                        // println!("one iter of labeling took {:?}", start.elapsed());
+                        // }
 
                         if has_updated.read()[0] == 0 {
                             // println!("iters: {i}");

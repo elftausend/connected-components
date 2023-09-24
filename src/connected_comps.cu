@@ -76,7 +76,7 @@ extern "C"{
         if (x >= width || y >= height) {
             return;
         } 
-        int threshold = 70;
+        int threshold = 30;
 
         unsigned int connections = 0;
 
@@ -127,7 +127,7 @@ extern "C"{
 
     }
 
-    __global__ void labelComponentsSharedWithConnections(unsigned int* input, unsigned int* out, int width, int height, unsigned char* R, unsigned char* G, unsigned char* B, int threshold, int* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
+    __global__ void labelComponentsSharedWithConnections(unsigned int* input, unsigned int* out, int width, int height, int threshold, int* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
         unsigned int bloatedBlockIdxX = blockIdx.x * 2 + offsetX;
         unsigned int bloatedBlockIdxY = blockIdx.y * 2 + offsetY;
 
@@ -221,13 +221,13 @@ extern "C"{
         unsigned int label = labels[threadIdx.y+1][33-threadIdx.x];
         if ((currentLabel & 0b10000000000000000000000000000000) >> 31) {
             if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
-                labels[threadIdx.y+1][32-threadIdx.x] |= label & 0x0FFFFFFF;       
+                labels[threadIdx.y+1][32-threadIdx.x] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);       
                 // hasUpdated[0] = 1; 
                 atomicOr(hasUpdated, 1);
             }
         }
         }
-        __syncthreads();
+        // __syncthreads();
 
         // down
         {
@@ -236,12 +236,12 @@ extern "C"{
         unsigned int label = labels[33-threadIdx.y][threadIdx.x+1];
         if ((currentLabel & 0b00100000000000000000000000000000) >> 29) {
             if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
-                labels[32-threadIdx.y][threadIdx.x+1] |= label & 0x0FFFFFFF;
+                labels[32-threadIdx.y][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF),
                 atomicOr(hasUpdated, 1);
             }
         }
         }
-        __syncthreads();
+        // __syncthreads();
 
         //left
         {
@@ -250,12 +250,12 @@ extern "C"{
 
         if ((currentLabel & 0b01000000000000000000000000000000) >> 30) {
             if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
-                labels[threadIdx.y+1][threadIdx.x+1] |= label & 0x0FFFFFFF;
+                labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
                 atomicOr(hasUpdated, 1);
             }
         }
         }
-        __syncthreads();
+        // __syncthreads();
 
          // up
         {
@@ -263,7 +263,7 @@ extern "C"{
         unsigned int label = labels[threadIdx.y][threadIdx.x+1];
         if ((currentLabel & 0b00010000000000000000000000000000) >> 28) {
             if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
-                labels[threadIdx.y+1][threadIdx.x+1] |= label & 0x0FFFFFFF;
+                labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
                 atomicOr(hasUpdated, 1);
             }
         }
@@ -739,10 +739,16 @@ extern "C"{
         }
         unsigned int idx = input[y * width + x];
         unsigned int labelIdx = idx & 0x0FFFFFFF;
-        unsigned char red = ( (unsigned char) ((double) labelIdx / pow(2.0, 32.0- 4.0)) * 255.0);
+        // unsigned char blue = labelIdx % 256;
+        // unsigned char green = ((labelIdx - blue) / 256) % 256;
+        // unsigned char red = ((labelIdx - blue) / (256*256)) - (green / 256);
+        unsigned char blue = labelIdx & 255;
+        unsigned char green = (labelIdx >> 8) & 255; 
+        unsigned char red = (labelIdx >> 16) & 255;
+        // unsigned char red = ( (unsigned char) ((double) labelIdx / pow(2.0, 32.0)) * 255.0);
        
-        unsigned char green = ( (unsigned char) ((double) labelIdx / pow(2.0, 16.0-4.0)) * 255.0);
-        unsigned char blue = ( (unsigned char) ((double) labelIdx / pow(2.0, 8.0)) * 255.0);
+        // unsigned char green = ( (unsigned char) ((double) labelIdx / pow(2.0, 16.0)) * 255.0);
+        // unsigned char blue = ( (unsigned char) ((double) labelIdx / pow(2.0, 8.0-1.0)) * 255.0);
         surf2Dwrite(make_uchar4(red, green, blue, 255), target, x * sizeof(uchar4), height - 1 - y);
     }
     __global__ void copyToInterleavedBuf(unsigned int* input, uchar4* target, int width, int height) {
@@ -758,10 +764,14 @@ extern "C"{
         }
         unsigned int idx = input[y * width + x];
         unsigned int labelIdx = idx & 0x0FFFFFFF;
-        unsigned char red = ( (unsigned char) ((double) labelIdx / pow(2.0, 32.0-4.0)) * 255.0);
+
+        unsigned char blue = labelIdx & 255;
+        unsigned char green = (labelIdx >> 8) & 255; 
+        unsigned char red = (labelIdx >> 16) & 255;
+        // unsigned char red = ( (unsigned char) ((double) labelIdx / pow(2.0, 32.0)) * 255.0);
        
-        unsigned char green = ( (unsigned char) ((double) labelIdx / pow(2.0, 16.0-4.0)) * 255.0);
-        unsigned char blue = ( (unsigned char) ((double) labelIdx / pow(2.0, 8.0)) * 255.0);
+        // unsigned char green = ( (unsigned char) ((double) labelIdx / pow(2.0, 16.0)) * 255.0);
+        // unsigned char blue = ( (unsigned char) ((double) labelIdx / pow(2.0, 8.0)) * 255.0);
         // printf("labelid: %d, %d, %d, %d \n", labelIdx, red, green, blue);
         target[y * width + x] = make_uchar4(red, green, blue, 255);
     }
