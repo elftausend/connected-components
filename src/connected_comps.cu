@@ -134,6 +134,8 @@ extern "C"{
         unsigned int x = bloatedBlockIdxX * blockDim.x + threadIdx.x;
         unsigned int y = bloatedBlockIdxY * blockDim.y + threadIdx.y;
 
+        // bool threadChanged = false;
+
         if (x >= width) {
             return;
         }
@@ -142,13 +144,8 @@ extern "C"{
             return;
         }
 
-        // __shared__ uchar4 pixels[34][34];
         __shared__ unsigned int labels[34][34];
-
-        int newY = y;// - blockIdx.y;
-        int newX = x;// - blockIdx.x;
-
-        int pixelIdx = y * width + x;
+        // __shared__ bool somethingChanged[1];
 
         if (threadIdx.y == 0) {
             int upperOverlap = (bloatedBlockIdxY * blockDim.y -1);
@@ -156,16 +153,13 @@ extern "C"{
             if (upperOverlap >= 0) {
 
                 labels[0][threadIdx.x+1] = input[upperOverlapIdx];
-                // pixels[0][threadIdx.x+1] = make_uchar4(R[upperOverlapIdx], G[upperOverlapIdx], B[upperOverlapIdx], 255);
 
                 //maybe not needed, diagonals
                 if (threadIdx.x == 0) {
                     labels[0][0] = input[upperOverlapIdx - 1];
-                    // pixels[0][0] = make_uchar4(R[upperOverlapIdx - 1], G[upperOverlapIdx - 1], B[upperOverlapIdx - 1], 255);
                 }
                 if (threadIdx.x == 31) {
                     labels[0][33] = input[upperOverlapIdx + 1];
-                    // pixels[0][33] = make_uchar4(R[upperOverlapIdx + 1], G[upperOverlapIdx + 1], B[upperOverlapIdx + 1], 255);
                 }
             }
         }
@@ -175,16 +169,13 @@ extern "C"{
             int lowerOverlapIdx = lowerOverlap * width + x;
             if (lowerOverlap < height) {                
                 labels[33][threadIdx.x+1] = input[lowerOverlapIdx];
-                // pixels[33][threadIdx.x+1] = make_uchar4(R[lowerOverlapIdx], G[lowerOverlapIdx], B[lowerOverlapIdx], 255);
 
                 //maybe not needed, diagonals
                 if (threadIdx.x == 0) {
                     labels[33][0] = input[lowerOverlapIdx - 1];
-                    // pixels[33][0] = make_uchar4(R[lowerOverlapIdx - 1], G[lowerOverlapIdx - 1], B[lowerOverlapIdx - 1], 255);
                 }
                 if (threadIdx.x == 31) {
                     labels[33][33] = input[lowerOverlapIdx + 1];
-                    // pixels[33][33] = make_uchar4(R[lowerOverlapIdx + 1], G[lowerOverlapIdx + 1], B[lowerOverlapIdx + 1], 255);
                 }
             }
         }
@@ -194,7 +185,6 @@ extern "C"{
             int leftOverlapIdx = y * width + leftOverlap;
             if (leftOverlap >= 0) {
                 labels[threadIdx.y+1][0] = input[leftOverlapIdx];
-                // pixels[threadIdx.y+1][0] = make_uchar4(R[leftOverlapIdx], G[leftOverlapIdx], B[leftOverlapIdx], 255);
             }
         }
 
@@ -203,14 +193,18 @@ extern "C"{
             int rightOverlapIdx = y * width + rightOverlap;
             if (rightOverlap < width) {
                 labels[threadIdx.y+1][33] = input[rightOverlapIdx];
-                // pixels[threadIdx.y+1][33] = make_uchar4(R[rightOverlapIdx], G[rightOverlapIdx], B[rightOverlapIdx], 255);
             }
         }
 
-        // pixels[threadIdx.y+1][threadIdx.x+1] = make_uchar4(R[pixelIdx], G[pixelIdx], B[pixelIdx], 255);
         labels[threadIdx.y+1][threadIdx.x+1] = input[y * width + x];
         __syncthreads();
 
+
+        // if (threadIdx.x == 0 && threadIdx.y == 0) {
+        //     somethingChanged[0] = 0;
+        // }
+
+        // __syncthreads();
 
         int outIdx = y * width + x;
 
@@ -219,49 +213,57 @@ extern "C"{
         {
         unsigned int currentLabel = labels[threadIdx.y+1][32-threadIdx.x];
         unsigned int label = labels[threadIdx.y+1][33-threadIdx.x];
-        if ((currentLabel & 0b10000000000000000000000000000000) >> 31) {
+        // if ((currentLabel & 0b10000000000000000000000000000000) >> 31) {
+        if ((currentLabel >> 31) & 1) {
+            
             if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
                 labels[threadIdx.y+1][32-threadIdx.x] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);       
                 // hasUpdated[0] = 1; 
+                // threadChanged = true; 
                 atomicOr(hasUpdated, 1);
             }
         }
         }
-        // __syncthreads();
+        __syncthreads();
 
         // down
         {
         unsigned int currentLabel = labels[32-threadIdx.y][threadIdx.x+1];
 
         unsigned int label = labels[33-threadIdx.y][threadIdx.x+1];
-        if ((currentLabel & 0b00100000000000000000000000000000) >> 29) {
+        // if ((currentLabel & 0b00100000000000000000000000000000) >> 29) {
+        if ((currentLabel >> 29) & 1) {
             if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
                 labels[32-threadIdx.y][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF),
+                // threadChanged = true; 
                 atomicOr(hasUpdated, 1);
             }
         }
         }
-        // __syncthreads();
+        __syncthreads();
 
         //left
         {
         unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
         unsigned int label = labels[threadIdx.y+1][threadIdx.x];
 
-        if ((currentLabel & 0b01000000000000000000000000000000) >> 30) {
+        // if ((currentLabel & 0b01000000000000000000000000000000) >> 30) {
+        if ((currentLabel >> 30) & 1) {
             if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
                 labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
+                // threadChanged = true; 
                 atomicOr(hasUpdated, 1);
             }
         }
         }
-        // __syncthreads();
+        __syncthreads();
 
          // up
         {
         unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
         unsigned int label = labels[threadIdx.y][threadIdx.x+1];
-        if ((currentLabel & 0b00010000000000000000000000000000) >> 28) {
+        // if ((currentLabel & 0b00010000000000000000000000000000) >> 28) {
+        if ((currentLabel >> 28) & 1) {
             if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
                 labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
                 atomicOr(hasUpdated, 1);
@@ -269,6 +271,17 @@ extern "C"{
         }
         }
         __syncthreads();
+
+        // if (threadChanged) {
+        //     somethingChanged[0] = true;
+        // }
+
+        // __syncthreads();
+
+        // if (threadIdx.x == 0 && threadIdx.y == 0 && somethingChanged[0]) {
+        //     *hasUpdated = 1;
+        // }
+
         out[outIdx] = labels[threadIdx.y+1][threadIdx.x+1];
     }
     __global__ void labelPixelsRowed(uchar4* target, int width, int height) {
