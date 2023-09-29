@@ -332,25 +332,25 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         let mut surface_texture: CUBuffer<u8> = CUBuffer {
-            ptr: CUDAPtr {
+            data: CUDAPtr {
                 ptr: cuda_tex,
                 flag: AllocFlag::Wrapper,
                 len: (width * height * 4) as usize,
                 p: std::marker::PhantomData,
             },
             device: Some(device),
-            ident: None,
+            // ident: None,
         };
 
         let mut surface: CUBuffer<u8> = CUBuffer {
-            ptr: CUDAPtr {
+            data: CUDAPtr {
                 ptr: cuda_surface,
                 flag: AllocFlag::Wrapper,
                 len: (width * height * 4) as usize,
                 p: std::marker::PhantomData,
             },
             device: Some(device),
-            ident: None,
+            // ident: None,
         };
 
         fill_cuda_surface(&mut surface, width as usize, height as usize, 255, 120, 120).unwrap();

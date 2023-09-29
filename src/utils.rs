@@ -18,7 +18,7 @@ pub fn get_constant_memory<'a, T>(
 ) -> CUBuffer<'a, T> {
     let func = fn_cache(device, src, fn_name).unwrap();
 
-    let module = device.modules.borrow().get(&func).unwrap().0;
+    let module = device.cuda_modules.borrow().get(&func).unwrap().0;
 
     let filter_var = CString::new(var_name).unwrap();
 
@@ -32,14 +32,14 @@ pub fn get_constant_memory<'a, T>(
     };
 
     CUBuffer {
-        ptr: CUDAPtr {
+        data: CUDAPtr {
             ptr: filter_data_ptr,
             flag: AllocFlag::Wrapper,
             len: size as usize / std::mem::size_of::<T>(),
             p: std::marker::PhantomData,
         },
         device: Some(device),
-        ident: None,
+        // ident: None,
     }
 }
 
