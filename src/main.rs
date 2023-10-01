@@ -105,7 +105,7 @@ unsafe fn decode_raw_jpeg<'a>(
     check!(status, "Could not get image info. ");
 
     heights[0] = heights[1] * 2;
-    heights[0] = 28; 
+    // heights[0] = 28; 
 
     println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
 
@@ -485,24 +485,24 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                             width as usize,
                             height as usize,
                         );
-                        println!("pixel (label): {pixel:?}");
+                        // println!("pixel (label): {pixel:?}");
 
                         let label_at = colorless_updated_labels
                             .read()
                             .get(cursor_loc.1 * width as usize + cursor_loc.0)
                             .copied();
                         if let Some(label_at) = label_at {
-                            let conns = label_at & 0xF0000000;
-                            let label = label_at & 0x0FFFFFFF;
-                            let blue = label & 255;
-                            let green = (label >> 8) & 255;
-                            let red = (label >> 16) & 255;
-                            println!(
-                                "label_at: {}, conns: {}, bgr: {:?}",
-                                label,
-                                conns >> 28,
-                                (blue, green, red)
-                            );
+                            // let conns = label_at & 0xF0000000;
+                            // let label = label_at & 0x0FFFFFFF;
+                            // let blue = label & 255;
+                            // let green = (label >> 8) & 255;
+                            // et red = (label >> 16) & 255;
+                            // println!(
+                            //     "label_at: {}, conns: {}, bgr: {:?}",
+                            //     label,
+                            //     conns >> 28,
+                            //     (blue, green, red)
+                            // );
                         }
 
                         if mode == Mode::MouseHighlight {
@@ -914,7 +914,7 @@ fn update_on_mode_change<'a>(
                         // start = Instant::now();
                         // }
                         if ping {
-                            label_components_shared_with_connections(
+                            label_components_shared_with_connections_and_links(
                                 &labels,
                                 &mut pong_updated_labels,
                                 &links,
@@ -928,7 +928,7 @@ fn update_on_mode_change<'a>(
                             .unwrap();
                             ping = false;
                         } else {
-                            label_components_shared_with_connections(
+                            label_components_shared_with_connections_and_links(
                                 &pong_updated_labels,
                                 &mut labels,
                                 &links,
@@ -1014,7 +1014,7 @@ use crate::connected_comps::{
     color_component_at_pixel, color_component_at_pixel_exact, copy_to_interleaved_buf,
     copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, interleave_rgb, label_components,
     label_components_master_label, label_components_shared,
-    label_components_shared_with_connections, label_pixels, label_pixels_combinations, read_pixel,
+    label_components_shared_with_connections, label_pixels, label_pixels_combinations, read_pixel, label_components_shared_with_connections_and_links,
 };
 
 pub use self::CUresourcetype_enum as CUresourcetype;

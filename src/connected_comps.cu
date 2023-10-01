@@ -76,7 +76,7 @@ extern "C"{
         if (x >= width || y >= height) {
             return;
         } 
-        int threshold = 30;
+        int threshold = 20;
         
         unsigned int connections = 0;
 
@@ -92,7 +92,9 @@ extern "C"{
             // uchar4 rightPixel = img[y * width + x + 1];
              
             if (abs(rightPixel.x - currentPixel.x) < threshold && abs(rightPixel.y - currentPixel.y) < threshold && abs(rightPixel.z - currentPixel.z) < threshold) {    
-                currentLink.x = 1;
+                if (threadIdx.x < 31) {
+                    currentLink.x = 1;
+                }
                 connections |= (1u << 31); 
             }
         }
@@ -102,7 +104,9 @@ extern "C"{
             // uchar4 leftPixel = img[y * width + x - 1];
 
           if (abs(leftPixel.x - currentPixel.x) < threshold && abs(leftPixel.y - currentPixel.y) < threshold && abs(leftPixel.z - currentPixel.z) < threshold) {    
-                currentLink.y = 1;
+                if (threadIdx.x > 0) {
+                    currentLink.z = 1;
+                }
                 connections |= (1u << 30); 
             }
         }
@@ -113,7 +117,9 @@ extern "C"{
             // uchar4 downPixel = img[(y + 1) * width + x];
 
             if (abs(downPixel.x - currentPixel.x) < threshold && abs(downPixel.y - currentPixel.y) < threshold && abs(downPixel.z - currentPixel.z) < threshold) {    
-                currentLink.z = 1;
+                if (threadIdx.y < 31) {
+                    currentLink.y = 1;
+                }
                 connections |= (1u << 29); 
             }
         }
@@ -123,7 +129,9 @@ extern "C"{
             // uchar4 upPixel = img[(y - 1) * width + x];
 
             if (abs(upPixel.x - currentPixel.x) < threshold && abs(upPixel.y - currentPixel.y) < threshold && abs(upPixel.z - currentPixel.z) < threshold) {    
-                currentLink.w = 1;
+                if (threadIdx.y > 0) {
+                    currentLink.w = 1;
+                }
                 connections |= (1u << 28);
             }
         }
@@ -150,8 +158,8 @@ extern "C"{
         labels[labelIdx] = label;
 
     }
-
-    __global__ void labelComponentsSharedWithConnections(unsigned int* input, unsigned int* out, uchar4* links, int width, int height, int threshold, int* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
+    
+    __global__ void labelComponentsSharedWithConnectionsAndLinks(unsigned int* input, unsigned int* out, uchar4* links, int width, int height, int threshold, int* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
         unsigned int bloatedBlockIdxX = blockIdx.x * 2 + offsetX;
         unsigned int bloatedBlockIdxY = blockIdx.y * 2 + offsetY;
 
@@ -235,8 +243,212 @@ extern "C"{
         unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
         // unsigned int currentLabel = labels[threadIdx.x+1][threadIdx.y+1];
 
+        // far right
+        uchar4 currentLink = links[outIdx]; 
+        {
+            unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
+            // unsigned int label = labels[threadIdx.y+1][threadIdx.x+1 + currentLink.x];
+            unsigned int label = __shfl_down_sync(0xffffffff, currentLabel, currentLink.x);
+            if (threadIdx.x == 31) {
+                if ((currentLabel >> 31) & 1) {
+                    label = labels[threadIdx.y+1][threadIdx.x+1 + 1];
+                }
+            }
+            if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
+                labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
+                atomicOr(hasUpdated, 1);
+
+                out[outIdx] = labels[threadIdx.y+1][threadIdx.x+1];
+            }
+        }
+        
+        // __syncthreads();
+        // far down
+        {
+        unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
+        unsigned int label = labels[threadIdx.y+1 + currentLink.y][threadIdx.x+1];
+        // if ((currentLabel >> 29) & 1) {
+            if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
+                labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF),
+                atomicOr(hasUpdated, 1);
+                out[outIdx] = labels[threadIdx.y+1][threadIdx.x+1];
+            }
+        // }
+        }
+
+        __syncthreads();
+
+        // out[outIdx] = labels[threadIdx.        
+        // // right        
+        // {
+        // unsigned int label = __shfl_down_sync(0xffffffff, currentLabel, 1);
+        // if (threadIdx.x == 31) {
+        //     label = labels[threadIdx.y+1][threadIdx.x+2];
+        // }
+        
+        // // if ((currentLabel & 0b10000000000000000000000000000000) >> 31) {
+        // if ((currentLabel >> 31) & 1) {
+            
+        //     if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
+        //         labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
+        //         // labels[threadIdx.x+1][threadIdx.y+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
+        //         // hasUpdated[0] = 1; 
+        //         // threadChanged = true; 
+        //         atomicOr(hasUpdated, 1);
+        //     }
+        // }
+        // }
+
+        // out[outIdx] = labels[threadIdx.y+1][threadIdx.x+1];
+        // return;
+
+        // down
+        // {
+        // unsigned int label = labels[threadIdx.y+2][threadIdx.x+1];
+        // // if ((currentLabel & 0b00100000000000000000000000000000) >> 29) {
+        // if ((currentLabel >> 29) & 1) {
+        //     if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
+        //         labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF),
+        //         // labels[threadIdx.x+1][threadIdx.y+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
+        //         // threadChanged = true; 
+        //         atomicOr(hasUpdated, 1);
+        //     }
+        // }
+        // }
+        // __syncthreads();
+
+        //left
+        {
+        unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
+        unsigned int label = __shfl_up_sync(0xffffffff, currentLabel, 1);
+        if (threadIdx.x == 0) {
+            label = labels[threadIdx.y+1][threadIdx.x];
+        }
+
+        if ((currentLabel >> 30) & 1) {
+            if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
+                labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
+                // labels[threadIdx.x+1][threadIdx.y+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
+                // threadChanged = true; 
+                atomicOr(hasUpdated, 1);
+                out[outIdx] = labels[threadIdx.y+1][threadIdx.x+1];
+            }
+        }
+        }
+
+         // up
+        {
+        unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
+        unsigned int label = labels[threadIdx.y][threadIdx.x+1];
+        if ((currentLabel >> 28) & 1) {
+            if ((currentLabel & 0x0FFFFFFF) < (label & 0x0FFFFFFF)) {
+                labels[threadIdx.y+1][threadIdx.x+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
+                // labels[threadIdx.x+1][threadIdx.y+1] = (currentLabel & 0xF0000000) | (label & 0x0FFFFFFF);
+                atomicOr(hasUpdated, 1);
+                out[outIdx] = labels[threadIdx.y+1][threadIdx.x+1];
+            }
+        }
+        }
+        __syncthreads();
+
+        // if (threadChanged) {
+        //     somethingChanged[0] = true;
+        // }
+
+        // __syncthreads();
+
+        // if (threadIdx.x == 0 && threadIdx.y == 0 && somethingChanged[0]) {
+        //     *hasUpdated = 1;
+        // }
+
+        out[outIdx] = labels[threadIdx.y+1][threadIdx.x+1];
+    }
+    __global__ void labelComponentsSharedWithConnections(unsigned int* input, unsigned int* out, uchar4* links, int width, int height, int threshold, int* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
+        unsigned int bloatedBlockIdxX = blockIdx.x * 2 + offsetX;
+        unsigned int bloatedBlockIdxY = blockIdx.y * 2 + offsetY;
+
+        unsigned int x = bloatedBlockIdxX * blockDim.x + threadIdx.x;
+        unsigned int y = bloatedBlockIdxY * blockDim.y + threadIdx.y;
+
+        // bool threadChanged = false;
+
+        if (x >= width) {
+            return;
+        }
+
+        if (y >= height) {
+            return;
+        }
+
+        __shared__ unsigned int labels[34][34];
+        // __shared__ bool somethingChanged[1];
+
+        if (threadIdx.y == 0) {
+            int upperOverlap = (bloatedBlockIdxY * blockDim.y -1);
+            int upperOverlapIdx = upperOverlap * width + x;
+            if (upperOverlap >= 0) {
+
+                labels[0][threadIdx.x+1] = input[upperOverlapIdx];
+
+                //maybe not needed, diagonals
+                if (threadIdx.x == 0) {
+                    labels[0][0] = input[upperOverlapIdx - 1];
+                }
+                if (threadIdx.x == 31) {
+                    labels[0][33] = input[upperOverlapIdx + 1];
+                }
+            }
+        }
+
+        if (threadIdx.y == 31) {
+            int lowerOverlap =  (bloatedBlockIdxY * blockDim.y + 32);
+            int lowerOverlapIdx = lowerOverlap * width + x;
+            if (lowerOverlap < height) {                
+                labels[33][threadIdx.x+1] = input[lowerOverlapIdx];
+
+                //maybe not needed, diagonals
+                if (threadIdx.x == 0) {
+                    labels[33][0] = input[lowerOverlapIdx - 1];
+                }
+                if (threadIdx.x == 31) {
+                    labels[33][33] = input[lowerOverlapIdx + 1];
+                }
+            }
+        }
+
+        if (threadIdx.x == 0) {
+            int leftOverlap =  (bloatedBlockIdxX * blockDim.x -1);
+            int leftOverlapIdx = y * width + leftOverlap;
+            if (leftOverlap >= 0) {
+                labels[threadIdx.y+1][0] = input[leftOverlapIdx];
+            }
+        }
+
+        if (threadIdx.x == 31) {
+            int rightOverlap =  (bloatedBlockIdxX * blockDim.x + 32);
+            int rightOverlapIdx = y * width + rightOverlap;
+            if (rightOverlap < width) {
+                labels[threadIdx.y+1][33] = input[rightOverlapIdx];
+            }
+        }
+
+        labels[threadIdx.y+1][threadIdx.x+1] = input[y * width + x];
+        __syncthreads();
+
+
+        // if (threadIdx.x == 0 && threadIdx.y == 0) {
+        //     somethingChanged[0] = 0;
+        // }
+
+        // __syncthreads();
+
+        int outIdx = y * width + x;
+
+        // unsigned int currentLabel = labels[threadIdx.x+1][threadIdx.y+1];
+
         // right        
         {
+        unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
         unsigned int label = __shfl_down_sync(0xffffffff, currentLabel, 1);
         if (threadIdx.x == 31) {
             label = labels[threadIdx.y+1][threadIdx.x+2];
@@ -258,6 +470,7 @@ extern "C"{
 
         // down
         {
+        unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
         unsigned int label = labels[threadIdx.y+2][threadIdx.x+1];
         // if ((currentLabel & 0b00100000000000000000000000000000) >> 29) {
         if ((currentLabel >> 29) & 1) {
@@ -273,6 +486,7 @@ extern "C"{
 
         //left
         {
+        unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
         unsigned int label = __shfl_up_sync(0xffffffff, currentLabel, 1);
         if (threadIdx.x == 0) {
             label = labels[threadIdx.y+1][threadIdx.x];
@@ -291,6 +505,7 @@ extern "C"{
 
          // up
         {
+        unsigned int currentLabel = labels[threadIdx.y+1][threadIdx.x+1];
         unsigned int label = labels[threadIdx.y][threadIdx.x+1];
         // if ((currentLabel & 0b00010000000000000000000000000000) >> 28) {
         if ((currentLabel >> 28) & 1) {

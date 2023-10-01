@@ -67,7 +67,7 @@ pub fn label_pixels_combinations(
         &[target, &width, &height],
     )
 }
-
+// labelComponentsSharedWithConnectionsAndLinks
 pub fn label_with_connection_info(
     target: &mut CUBuffer<u32>,
     links: &mut CUBuffer<u8>,
@@ -137,6 +137,40 @@ pub fn label_components(
     )
 }
 
+pub fn label_components_shared_with_connections_and_links(
+    input: &CUBuffer<u32>,
+    out: &mut CUBuffer<u32>,
+    links: &CUBuffer<u8>,
+    width: usize,
+    height: usize,
+    threshold: i32,
+    has_updated: &mut CUBuffer<i32>,
+    offset_y: u8,
+    offset_x: u8,
+) -> custos::Result<()> {
+    launch_kernel(
+        input.device(),
+        [width as u32 / 32 + 1, height as u32 / 32 + 1, 1],
+        // [16, 16, 1],
+        [32, 32, 1],
+        // [64, 34, 1],
+        // [32, 32, 1],
+        0,
+        CUDA_SOURCE,
+        "labelComponentsSharedWithConnectionsAndLinks",
+        &[
+            input,
+            out,
+            links,
+            &width,
+            &height,
+            &threshold,
+            has_updated,
+            &offset_y,
+            &offset_x,
+        ],
+    )
+}
 pub fn label_components_shared_with_connections(
     input: &CUBuffer<u32>,
     out: &mut CUBuffer<u32>,
