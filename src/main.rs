@@ -105,7 +105,7 @@ unsafe fn decode_raw_jpeg<'a>(
     check!(status, "Could not get image info. ");
 
     heights[0] = heights[1] * 2;
-    // heights[0] = 300;
+    heights[0] = 28; 
 
     println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
 
@@ -851,10 +851,16 @@ fn update_on_mode_change<'a>(
 
             let mut labels: custos::Buffer<u32, CUDA> =
                 custos::Buffer::new(&device, width * height);
+
+            // constant memory afterwards?
+            let mut links: custos::Buffer<u8, CUDA> =
+                custos::Buffer::new(&device, width * height * 4);
+
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
 
             label_with_connection_info(
                 &mut labels,
+                &mut links,
                 &channels[0],
                 &channels[1],
                 &channels[2],
@@ -866,6 +872,7 @@ fn update_on_mode_change<'a>(
             // return;
             
             device.stream().sync().unwrap();
+            // println!("links: {:?}", links.read());
             let mut pong_updated_labels = labels.clone();
             *colorless_updated_labels = labels.clone();
             // copy_to_surface_unsigned(&labels, surface, width, height);
@@ -910,6 +917,7 @@ fn update_on_mode_change<'a>(
                             label_components_shared_with_connections(
                                 &labels,
                                 &mut pong_updated_labels,
+                                &links,
                                 width,
                                 height,
                                 threshold,
@@ -923,6 +931,7 @@ fn update_on_mode_change<'a>(
                             label_components_shared_with_connections(
                                 &pong_updated_labels,
                                 &mut labels,
+                                &links,
                                 width,
                                 height,
                                 threshold,

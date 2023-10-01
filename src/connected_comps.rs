@@ -70,6 +70,7 @@ pub fn label_pixels_combinations(
 
 pub fn label_with_connection_info(
     target: &mut CUBuffer<u32>,
+    links: &mut CUBuffer<u8>,
     red: &CUBuffer<u8>,
     green: &CUBuffer<u8>,
     blue: &CUBuffer<u8>,
@@ -83,7 +84,7 @@ pub fn label_with_connection_info(
         0,
         CUDA_SOURCE,
         "labelWithConnectionInfo",
-        &[target, red, green, blue, &width, &height],
+        &[target, links, red, green, blue, &width, &height],
     )
     .unwrap()
 }
@@ -139,6 +140,7 @@ pub fn label_components(
 pub fn label_components_shared_with_connections(
     input: &CUBuffer<u32>,
     out: &mut CUBuffer<u32>,
+    links: &CUBuffer<u8>,
     width: usize,
     height: usize,
     threshold: i32,
@@ -159,6 +161,7 @@ pub fn label_components_shared_with_connections(
         &[
             input,
             out,
+            links,
             &width,
             &height,
             &threshold,

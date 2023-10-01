@@ -70,24 +70,29 @@ extern "C"{
         //surf2Dwrite(color, target, x * sizeof(uchar4), height -1 - y);
     }
 
-    __global__ void labelWithConnectionInfo(unsigned int* labels, unsigned char* R,unsigned char* G,unsigned char* B, int width, int height) {
+    __global__ void labelWithConnectionInfo(unsigned int* labels, uchar4* links, unsigned char* R,unsigned char* G,unsigned char* B, int width, int height) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
         if (x >= width || y >= height) {
             return;
         } 
         int threshold = 30;
-
+        
         unsigned int connections = 0;
 
         uchar4 currentPixel = make_uchar4(R[y * width + x], G[y * width + x], B[y * width + x], 255);
+
+        __shared__ uchar4 sharedLinks[32][32];
+        
+        uchar4 currentLink = make_uchar4(0, 0, 0, 0);
 
         // right 
         if (x < width-1) {
             uchar4 rightPixel = make_uchar4(R[y * width + x +1], G[y * width + x +1], B[y * width + x+1], 255);
             // uchar4 rightPixel = img[y * width + x + 1];
-            
+             
             if (abs(rightPixel.x - currentPixel.x) < threshold && abs(rightPixel.y - currentPixel.y) < threshold && abs(rightPixel.z - currentPixel.z) < threshold) {    
+                currentLink.x = 1;
                 connections |= (1u << 31); 
             }
         }
@@ -97,6 +102,7 @@ extern "C"{
             // uchar4 leftPixel = img[y * width + x - 1];
 
           if (abs(leftPixel.x - currentPixel.x) < threshold && abs(leftPixel.y - currentPixel.y) < threshold && abs(leftPixel.z - currentPixel.z) < threshold) {    
+                currentLink.y = 1;
                 connections |= (1u << 30); 
             }
         }
@@ -107,6 +113,7 @@ extern "C"{
             // uchar4 downPixel = img[(y + 1) * width + x];
 
             if (abs(downPixel.x - currentPixel.x) < threshold && abs(downPixel.y - currentPixel.y) < threshold && abs(downPixel.z - currentPixel.z) < threshold) {    
+                currentLink.z = 1;
                 connections |= (1u << 29); 
             }
         }
@@ -116,9 +123,26 @@ extern "C"{
             // uchar4 upPixel = img[(y - 1) * width + x];
 
             if (abs(upPixel.x - currentPixel.x) < threshold && abs(upPixel.y - currentPixel.y) < threshold && abs(upPixel.z - currentPixel.z) < threshold) {    
+                currentLink.w = 1;
                 connections |= (1u << 28);
             }
-        }        
+        }
+
+        sharedLinks[threadIdx.y][threadIdx.x] = currentLink;
+        __syncthreads();
+
+        for (int i=0; i<5; i++) {
+            currentLink.x += sharedLinks[threadIdx.y][threadIdx.x + currentLink.x].x;
+            currentLink.y += sharedLinks[threadIdx.y + currentLink.y][threadIdx.x].y;
+            currentLink.z += sharedLinks[threadIdx.y][threadIdx.x - currentLink.z].z;
+            currentLink.w += sharedLinks[threadIdx.y - currentLink.w][threadIdx.x].w;
+
+            sharedLinks[threadIdx.y][threadIdx.x] = currentLink;
+            __syncthreads();
+        }
+
+        links[y * width + x] = sharedLinks[threadIdx.y][threadIdx.x];
+
         unsigned int labelIdx = y * width + x;
         unsigned int label = labelIdx + 1;
         label |= connections;
@@ -127,7 +151,7 @@ extern "C"{
 
     }
 
-    __global__ void labelComponentsSharedWithConnections(unsigned int* input, unsigned int* out, int width, int height, int threshold, int* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
+    __global__ void labelComponentsSharedWithConnections(unsigned int* input, unsigned int* out, uchar4* links, int width, int height, int threshold, int* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
         unsigned int bloatedBlockIdxX = blockIdx.x * 2 + offsetX;
         unsigned int bloatedBlockIdxY = blockIdx.y * 2 + offsetY;
 
