@@ -38,7 +38,8 @@ enum Mode {
     Labels,
     MouseHighlight,
     RowWise,
-    ConnectionInfo,
+    ConnectionInfoWide,
+    ConnectionInfo32x32,
 }
 
 impl Mode {
@@ -47,8 +48,9 @@ impl Mode {
             Mode::None => Mode::Labels,
             Mode::Labels => Mode::MouseHighlight,
             Mode::MouseHighlight => Mode::RowWise,
-            Mode::RowWise => Mode::ConnectionInfo,
-            Mode::ConnectionInfo => Mode::None,
+            Mode::RowWise => Mode::ConnectionInfoWide,
+            Mode::ConnectionInfoWide => Mode::ConnectionInfo32x32,
+            Mode::ConnectionInfo32x32 => Mode::None,
         };
         *self = mode;
     }
@@ -61,7 +63,8 @@ impl From<u8> for Mode {
             1 => Mode::Labels,
             2 => Mode::MouseHighlight,
             3 => Mode::RowWise,
-            8 => Mode::ConnectionInfo,
+            7 => Mode::ConnectionInfoWide,
+            8 => Mode::ConnectionInfo32x32,
             _ => Mode::None,
         }
     }
@@ -105,7 +108,7 @@ unsafe fn decode_raw_jpeg<'a>(
     check!(status, "Could not get image info. ");
 
     heights[0] = heights[1] * 2;
-    // heights[0] = 28; 
+    // heights[0] = 28;
 
     println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
 
@@ -843,7 +846,7 @@ fn update_on_mode_change<'a>(
             println!("(master,rowwise) labeling took {:?}", start.elapsed());
             copy_to_surface(&labels, surface, width, height);
         }
-        Mode::ConnectionInfo => {
+        Mode::ConnectionInfo32x32 => {
             println!("connection info");
 
             let mut pong_updated_labels: custos::Buffer<u32, CUDA> =
@@ -864,13 +867,14 @@ fn update_on_mode_change<'a>(
                 &channels[0],
                 &channels[1],
                 &channels[2],
+                5,
                 width,
                 height,
             );
-            
+
             // println!("labels: {:?}", labels.read());
             // return;
-            
+
             device.stream().sync().unwrap();
             // println!("links: {:?}", links.read());
             let mut pong_updated_labels = labels.clone();
@@ -982,6 +986,101 @@ fn update_on_mode_change<'a>(
 
             device.stream().sync().unwrap();
         }
+        Mode::ConnectionInfoWide => {
+            println!("connection info");
+
+            let mut labels: custos::Buffer<u32, CUDA> =
+                custos::Buffer::new(&device, width * height);
+
+            // constant memory afterwards?
+            let mut links: custos::Buffer<u16, CUDA> =
+                custos::Buffer::new(&device, width * height * 4);
+
+            // let mut labels = buf![0u8; width * height * 4].to_cuda();
+
+            label_with_connection_info_more_32(
+                &mut labels,
+                &mut links,
+                &channels[0],
+                &channels[1],
+                &channels[2],
+                13,
+                width,
+                height,
+            );
+
+            device.stream().sync().unwrap();
+            // println!("links: {links:?}");
+            // return;
+            let mut pong_updated_labels = labels.clone();
+            *colorless_updated_labels = labels.clone();
+            device.stream().sync().unwrap();
+
+            let mut has_updated: custos::Buffer<'_, _, CUDA> = CUBuffer::<_>::new(device, 1);
+
+            let start = Instant::now();
+
+            let mut ping = true;
+            let mut iters = 0;
+
+            // batch n (100) launches to reduce kernel overhead?
+            loop {
+                // println!("hi");
+                if ping {
+                    label_components_far(
+                        &labels,
+                        &mut pong_updated_labels,
+                        &links,
+                        width,
+                        height,
+                        &mut has_updated,
+                    )
+                    .unwrap();
+                    ping = false;
+                } else {
+                    label_components_far(
+                        &pong_updated_labels,
+                        &mut labels,
+                        &links,
+                        width,
+                        height,
+                        &mut has_updated,
+                    )
+                    .unwrap();
+                    ping = true;
+                }
+                iters += 1;
+                device.stream().sync().unwrap();
+                // break;
+                if has_updated.read()[0] == 0 {
+                    break;
+                }
+                
+                has_updated.clear();
+            }
+
+            // device.stream().sync().unwrap();
+            println!("labeling took {:?}, iters: {iters}", start.elapsed());
+
+            // copy_to_surface(&labels, surface, width, height);
+            if ping {
+                *colorless_updated_labels = labels.clone();
+                copy_to_surface_unsigned(&labels, surface, width, height);
+                // println!("labels: {:?}", labels.read());
+                copy_to_interleaved_buf(&labels, updated_labels, width, height);
+            } else {
+                *colorless_updated_labels = pong_updated_labels.clone();
+                // println!("labels: {:?}", pong_updated_labels.read());
+                copy_to_surface_unsigned(&pong_updated_labels, surface, width, height);
+                copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
+            }
+
+            // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
+            // fill the core f red
+            // color_component_at_pixel_exact(&surface_texture, surface, 8, 64, width, height);
+
+            device.stream().sync().unwrap();
+        }
     }
 }
 
@@ -1014,7 +1113,8 @@ use crate::connected_comps::{
     color_component_at_pixel, color_component_at_pixel_exact, copy_to_interleaved_buf,
     copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, interleave_rgb, label_components,
     label_components_master_label, label_components_shared,
-    label_components_shared_with_connections, label_pixels, label_pixels_combinations, read_pixel, label_components_shared_with_connections_and_links,
+    label_components_shared_with_connections, label_components_shared_with_connections_and_links,
+    label_pixels, label_pixels_combinations, read_pixel, label_components_far, label_with_connection_info_more_32,
 };
 
 pub use self::CUresourcetype_enum as CUresourcetype;

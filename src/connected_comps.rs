@@ -1,6 +1,7 @@
 use custos::{cuda::launch_kernel, prelude::CUBuffer};
 
 const CUDA_SOURCE: &str = include_str!("./connected_comps.cu");
+const CUDA_SOURCE_MORE32: &str = include_str!("./connection_info_more32.cu");
 
 pub fn fill_cuda_surface(
     to_fill: &mut CUBuffer<u8>,
@@ -31,7 +32,7 @@ pub fn interleave_rgb(
 ) -> custos::Result<()> {
     launch_kernel(
         target.device(),
-        [64, 135, 1],
+        [64, 256, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,
@@ -59,13 +60,34 @@ pub fn label_pixels_combinations(
 ) -> custos::Result<()> {
     launch_kernel(
         target.device(),
-        [64, 135, 1],
+        [64, 256, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,
         "labelPixelsCombinations",
         &[target, &width, &height],
     )
+}
+pub fn label_with_connection_info_more_32(
+    target: &mut CUBuffer<u32>,
+    links: &mut CUBuffer<u16>,
+    red: &CUBuffer<u8>,
+    green: &CUBuffer<u8>,
+    blue: &CUBuffer<u8>,
+    cycles: i32,
+    width: usize,
+    height: usize,
+) {
+    launch_kernel(
+        target.device(),
+        [64, 256, 1],
+        [32, 8, 1],
+        0,
+      CUDA_SOURCE_MORE32,
+        "labelWithConnectionInfoMore32",
+        &[target, links, red, green, blue, &cycles, &width, &height],
+    )
+    .unwrap()
 }
 // labelComponentsSharedWithConnectionsAndLinks
 pub fn label_with_connection_info(
@@ -74,17 +96,18 @@ pub fn label_with_connection_info(
     red: &CUBuffer<u8>,
     green: &CUBuffer<u8>,
     blue: &CUBuffer<u8>,
+    cycles: i32,
     width: usize,
     height: usize,
 ) {
     launch_kernel(
         target.device(),
-        [64, 135, 1],
+        [64, 256, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,
         "labelWithConnectionInfo",
-        &[target, links, red, green, blue, &width, &height],
+        &[target, links, red, green, blue, &cycles, &width, &height],
     )
     .unwrap()
 }
@@ -134,6 +157,28 @@ pub fn label_components(
             &threshold,
             has_updated,
         ],
+    )
+}
+
+pub fn label_components_far(
+    input: &CUBuffer<u32>,
+    out: &mut CUBuffer<u32>,
+    links: &CUBuffer<u16>,
+    width: usize,
+    height: usize,
+    has_updated: &mut CUBuffer<i32>,
+) -> custos::Result<()> {
+    launch_kernel(
+        input.device(),
+        [width as u32 / 32 + 1, height as u32 / 32 + 1, 1],
+        // [16, 16, 1],
+        [32, 32, 1],
+        // [64, 34, 1],
+        // [32, 32, 1],
+        0,
+        CUDA_SOURCE_MORE32,
+        "labelComponentsFar",
+        &[input, out, links, &width, &height, has_updated],
     )
 }
 
@@ -257,7 +302,7 @@ pub fn label_components_master_label(
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
-        [64, 135, 1],
+        [64, 256, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,
@@ -304,7 +349,7 @@ pub fn copy_to_surface(
 ) {
     launch_kernel(
         labels.device(),
-        [64, 135, 1],
+        [64, 256, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,
@@ -321,7 +366,7 @@ pub fn copy_to_surface_unsigned(
 ) {
     launch_kernel(
         labels.device(),
-        [64, 135, 1],
+        [64, 256, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,
@@ -338,7 +383,7 @@ pub fn copy_to_interleaved_buf(
 ) {
     launch_kernel(
         labels.device(),
-        [64, 135, 1],
+        [64, 256, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,
@@ -380,7 +425,7 @@ pub fn color_component_at_pixel_exact(
 ) {
     launch_kernel(
         surface.device(),
-        [64, 135, 1],
+        [64, 256, 1],
         [32, 8, 1],
         0,
         CUDA_SOURCE,

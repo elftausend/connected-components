@@ -69,8 +69,9 @@ extern "C"{
 
         //surf2Dwrite(color, target, x * sizeof(uchar4), height -1 - y);
     }
+   
 
-    __global__ void labelWithConnectionInfo(unsigned int* labels, uchar4* links, unsigned char* R,unsigned char* G,unsigned char* B, int width, int height) {
+    __global__ void labelWithConnectionInfo(unsigned int* labels, uchar4* links, unsigned char* R,unsigned char* G,unsigned char* B, int cycles, int width, int height) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
         if (x >= width || y >= height) {
@@ -139,10 +140,14 @@ extern "C"{
         sharedLinks[threadIdx.y][threadIdx.x] = currentLink;
         __syncthreads();
 
-        for (int i=0; i<5; i++) {
+        for (int i=0; i<cycles; i++) {
+            // right
             currentLink.x += sharedLinks[threadIdx.y][threadIdx.x + currentLink.x].x;
+            // down
             currentLink.y += sharedLinks[threadIdx.y + currentLink.y][threadIdx.x].y;
+            // left
             currentLink.z += sharedLinks[threadIdx.y][threadIdx.x - currentLink.z].z;
+            // up
             currentLink.w += sharedLinks[threadIdx.y - currentLink.w][threadIdx.x].w;
 
             sharedLinks[threadIdx.y][threadIdx.x] = currentLink;
@@ -158,7 +163,7 @@ extern "C"{
         labels[labelIdx] = label;
 
     }
-    
+   
     __global__ void labelComponentsSharedWithConnectionsAndLinks(unsigned int* input, unsigned int* out, uchar4* links, int width, int height, int threshold, int* hasUpdated, unsigned char offsetY, unsigned char offsetX) {
         unsigned int bloatedBlockIdxX = blockIdx.x * 2 + offsetX;
         unsigned int bloatedBlockIdxY = blockIdx.y * 2 + offsetY;
