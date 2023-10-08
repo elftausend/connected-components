@@ -59,12 +59,12 @@ extern "C" {
 
         unsigned int labelIdx = y * width + x;
         unsigned int label = labelIdx + 1;
-        label |= connections;
+        // label |= connections;
 
         // right
-        for (int i = x; i < width-x; i++) {
+        for (int i = x + 1; i < width; i++) {
             // break; 
-            int4 rightPixel = make_int4(R[y * width + i +1], G[y * width + i +1], B[y * width + i+1], 255);
+            int4 rightPixel = make_int4(R[y * width + i], G[y * width + i], B[y * width + i], 255);
             if (!(abs(rightPixel.x - currentPixel.x) < threshold && abs(rightPixel.y - currentPixel.y) < threshold && abs(rightPixel.z - currentPixel.z) < threshold)) {
                 break;
             }
@@ -74,14 +74,37 @@ extern "C" {
         }
 
         // down 
-        for (int i = y; i < height-y; i++) { 
-            break;
-            int4 rightPixel = make_int4(R[(y+ i + 1) * width + x], G[(y + i +1) * width + x], B[(y + i +1) * width + x], 255);
+        for (int i = y + 1; i < height; i++) { 
+            // break;
+            int4 rightPixel = make_int4(R[i * width + x], G[i * width + x], B[i * width + x], 255);
+            // printf("%d \n", rightPixel.x);
             if (!(abs(rightPixel.x - currentPixel.x) < threshold && abs(rightPixel.y - currentPixel.y) < threshold && abs(rightPixel.z - currentPixel.z) < threshold)) {
                 break;
             }
-            unsigned short farDownLabel = (unsigned short) i - y;
+            unsigned short farDownLabel = (unsigned short) (i - y);
             currentLink.y = farDownLabel;
+        }
+        // left
+        for (int i = x - 1; i >= 0; i--) {
+            // break; 
+            int4 leftPixel = make_int4(R[y * width + i], G[y * width + i], B[y * width + i], 255);
+            if (!(abs(leftPixel.x - currentPixel.x) < threshold && abs(leftPixel.y - currentPixel.y) < threshold && abs(leftPixel.z - currentPixel.z) < threshold)) {
+                break;
+            }
+            unsigned short farLeftLabel = (unsigned short) (x - i);
+            // printf("right link: %d \n", farLeftLabel);
+            currentLink.z = farLeftLabel;
+        }
+        // up 
+        for (int i = y - 1; i >= 0; i--) { 
+            // break;
+            int4 rightPixel = make_int4(R[i * width + x], G[i * width + x], B[i * width + x], 255);
+            // printf("%d \n", rightPixel.x);
+            if (!(abs(rightPixel.x - currentPixel.x) < threshold && abs(rightPixel.y - currentPixel.y) < threshold && abs(rightPixel.z - currentPixel.z) < threshold)) {
+                break;
+            }
+            unsigned short farDownLabel = (unsigned short) (y - i);
+            currentLink.w = farDownLabel;
         }
 
         links[labelIdx] = currentLink;
@@ -92,6 +115,7 @@ extern "C" {
     }
 
     __global__ void labelComponentsFar(unsigned int* input, unsigned int* out, ushort4* links, int width, int height, int* hasUpdated) {
+        // return;
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -101,45 +125,79 @@ extern "C" {
 
         int outIdx = y * width + x;
         
-        int currentLabel = input[outIdx];
+        unsigned int currentLabel = input[outIdx];
 
         ushort4 currentLink = links[outIdx];
-        int farRightLabel = input[outIdx + (int) currentLink.x];
+        unsigned int farRightLabel = input[outIdx + (int) currentLink.x];
 
         if (farRightLabel > currentLabel) {
-            out[outIdx] = farRightLabel;
+            // out[outIdx] = farRightLabel;
+            currentLabel = farRightLabel;
             *hasUpdated = 1;
             // atomicOr(hasUpdated, 1);
-            return;
+            // return;
         }
-        
-        int farDownLabel = input[(y + currentLink.y) * width + x];
+    
+        unsigned int farDownLabel = input[(y + currentLink.y) * width + x];
 
         if (farDownLabel > currentLabel) {
-            out[outIdx] = farDownLabel;
+            // out[outIdx] = farDownLabel;
+            currentLabel = farDownLabel;
             *hasUpdated = 1;
             // atomicOr(hasUpdated, 1);
-            return;
-        }
-        
-        int farLeftLabel = input[outIdx - currentLink.z];
+            // return;
+        }    
+
+        unsigned int farLeftLabel = input[outIdx - currentLink.z];
 
         if (farLeftLabel > currentLabel) {
-            out[outIdx] = farLeftLabel;
+            // out[outIdx] = farLeftLabel;
+            currentLabel = farLeftLabel;
             *hasUpdated = 1;
             // atomicOr(hasUpdated, 1);
-            return;
+            // return;
         }
+     
         
-        int farUpLabel = input[(y - currentLink.w) * width + x];
+        unsigned int farUpLabel = input[(y - currentLink.w) * width + x];
 
         if (farUpLabel > currentLabel) {
-            out[outIdx] = farUpLabel;
+            // out[outIdx] = farUpLabel;
+            currentLabel = farUpLabel;
             *hasUpdated = 1;
             // atomicOr(hasUpdated, 1);
-            return;
+            // return;
         }
+        // if (outIdx == 0) {
+        //     printf("%d \n", (currentLabel >> 30) & 1);
+        // }
+        
+        int leftLabel = input[outIdx - min(1, currentLink.z)];
 
+        if (leftLabel > currentLabel) {
+            // out[outIdx] = farLeftLabel;
+            currentLabel = leftLabel;
+            *hasUpdated = 1;
+        }
+  
+        int upLabel = input[(y - min(1, currentLink.w)) * width + x];
+
+        if (upLabel > currentLabel) {
+            // out[outIdx] = farLeftLabel;
+            currentLabel = upLabel;
+            *hasUpdated = 1;
+        }
+ 
+
+        // int farUpLabel = input[(y - currentLink.w) * width + x];
+
+        // if (farUpLabel > currentLabel) {
+        //     // out[outIdx] = farUpLabel;
+        //     currentLabel = farUpLabel;
+        //     *hasUpdated = 1;
+        //     // atomicOr(hasUpdated, 1);
+        //     // return;
+        // }
         out[outIdx] = currentLabel;
     }
  

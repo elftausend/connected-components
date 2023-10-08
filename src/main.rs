@@ -3,7 +3,7 @@ mod connected_comps;
 mod utils;
 
 use std::{
-    mem::size_of,
+    mem::{size_of, ManuallyDrop},
     ptr::{null, null_mut},
     time::Instant,
 };
@@ -11,11 +11,11 @@ use std::{
 use clap::{arg, command, Parser};
 use connected_comps::{label_components_rowed, label_pixels_rowed, label_with_connection_info};
 use custos::{
-    cuda::{api::CUstream, CUDAPtr},
+    cuda::{api::{CUstream, Graph}, CUDAPtr, fn_cache},
     flag::AllocFlag,
     prelude::CUBuffer,
     static_api::static_cuda,
-    CUDA,
+    CUDA, Base, OnDropBuffer, OnNewBuffer, Lazy, Device, ClearBuf,
 };
 use glow::*;
 use glutin::event::VirtualKeyCode;
@@ -77,10 +77,10 @@ pub struct Args {
     image_path: String,
 }
 
-unsafe fn decode_raw_jpeg<'a>(
+unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()>>(
     raw_data: &[u8],
-    device: &'a CUDA,
-) -> Result<([custos::Buffer<'a, u8, CUDA>; 3], i32, i32), Box<dyn std::error::Error + Send + Sync>>
+    device: &'a CUDA<Mods>,
+) -> Result<([custos::Buffer<'a, u8, CUDA<Mods>>; 3], i32, i32), Box<dyn std::error::Error + Send + Sync>>
 {
     let mut handle: nvjpegHandle_t = null_mut();
 
@@ -108,7 +108,7 @@ unsafe fn decode_raw_jpeg<'a>(
     check!(status, "Could not get image info. ");
 
     heights[0] = heights[1] * 2;
-    // heights[0] = 28;
+    heights[0] = 300;
 
     println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
 
@@ -133,9 +133,10 @@ unsafe fn decode_raw_jpeg<'a>(
         raw_data.len(),
         nvjpegOutputFormat_t_NVJPEG_OUTPUT_RGB,
         &mut image,
-        // device.stream().0 as *mut _,
-        null_mut(),
+        device.mem_transfer_stream.0 as *mut _,
+        // null_mut(),
     );
+    device.mem_transfer_stream.sync().unwrap();
     check!(status, "Could not decode image. ");
 
     //device.stream().sync()?;
@@ -156,6 +157,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     // print current directory at start
     let args = Args::parse();
     let device = static_cuda();
+    // let device = &*Box::leak(Box::new(CUDA::<Base>::new(0).unwrap()));
     unsafe {
         // let mut decoder = jpeg_decoder::JpegDecoder::new().unwrap();
 
@@ -334,7 +336,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Cannot create texture object",
         );
 
-        let mut surface_texture: CUBuffer<u8> = CUBuffer {
+        let mut surface_texture: custos::Buffer<u8, _> = custos::Buffer {
             data: CUDAPtr {
                 ptr: cuda_tex,
                 flag: AllocFlag::Wrapper,
@@ -345,7 +347,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             // ident: None,
         };
 
-        let mut surface: CUBuffer<u8> = CUBuffer {
+        let mut surface: custos::Buffer<'_, u8, _>  = custos::Buffer {
             data: CUDAPtr {
                 ptr: cuda_surface,
                 flag: AllocFlag::Wrapper,
@@ -537,7 +539,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                         is_synthetic,
                     } => {
                         // switch between views with key press (label values)
-                        let channels: &[custos::Buffer<'_, u8, CUDA>; 3] = &channels;
+                        let channels: &[custos::Buffer<'_, u8, _>; 3] = &channels;
                         // decoder.channels.as_ref().unwrap();
                         if input.state == glutin::event::ElementState::Pressed {
                             let Some(keycode) = input.virtual_keycode.as_ref() else {
@@ -626,16 +628,16 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn update_on_mode_change<'a>(
+fn update_on_mode_change<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()> + OnNewBuffer<u32, CUDA<Mods>, ()> + OnNewBuffer<i32, CUDA<Mods>, ()> + OnNewBuffer<u16, CUDA<Mods>, ()>>(
     mode: &Mode,
-    surface: &mut CUBuffer<u8>,
-    surface_texture: &mut CUBuffer<u8>,
-    channels: &[CUBuffer<u8>],
+    surface: &mut custos::Buffer<u8, CUDA<Mods>>,
+    surface_texture: &mut custos::Buffer<u8, CUDA<Mods>>,
+    channels: &[custos::Buffer<u8, CUDA<Mods>>],
     width: usize,
     height: usize,
-    device: &'static CUDA,
-    updated_labels: &mut CUBuffer<u8>,
-    colorless_updated_labels: &mut CUBuffer<u32>,
+    device: &'static CUDA<Mods>,
+    updated_labels: &mut custos::Buffer<u8, CUDA<Mods>>,
+    colorless_updated_labels: &mut custos::Buffer<u32, CUDA<Mods>>,
     threshold: i32,
 ) {
     match mode {
@@ -652,7 +654,7 @@ fn update_on_mode_change<'a>(
             device.stream().sync().unwrap();
         }
         Mode::Labels => {
-            let mut labels: custos::Buffer<'static, u8, CUDA> =
+            let mut labels: custos::Buffer<'static, u8, _> =
                 custos::Buffer::new(device, width * height * 4);
             // let mut labels: custos::Buffer<'_, u8, CUDA> = buf![0u8; width * height * 4].to_dev::<crate::CUDA>();
 
@@ -663,7 +665,7 @@ fn update_on_mode_change<'a>(
             // *updated_labels = buf![0u8; width * height * 4].to_cuda();
             *updated_labels = labels.clone(); // only for mouse pos debug
 
-            let mut has_updated: custos::Buffer<'_, _, CUDA> = CUBuffer::<_>::new(device, 1);
+            let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
 
             let start = Instant::now();
 
@@ -793,8 +795,8 @@ fn update_on_mode_change<'a>(
         }
         Mode::MouseHighlight => {}
         Mode::RowWise => {
-            let mut labels: custos::Buffer<u8, CUDA> =
-                custos::Buffer::new(&device, width * height * 4);
+            let mut labels: custos::Buffer<u8, _> =
+                custos::Buffer::new(device, width * height * 4);
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
 
             label_pixels_combinations(&mut labels, width, height).unwrap();
@@ -804,7 +806,7 @@ fn update_on_mode_change<'a>(
             // *updated_labels = buf![0u8; width * height * 4].to_cuda();
             *updated_labels = custos::Buffer::new(&device, width * height * 4);
 
-            let mut has_updated: custos::Buffer<'_, u8, CUDA> = CUBuffer::<u8>::new(device, 1);
+            let mut has_updated: custos::Buffer<'_, u8, _> = custos::Buffer::<u8, _>::new(device, 1);
 
             let start = Instant::now();
             for i in 0..width * height * 10 {
@@ -849,15 +851,15 @@ fn update_on_mode_change<'a>(
         Mode::ConnectionInfo32x32 => {
             println!("connection info");
 
-            let mut pong_updated_labels: custos::Buffer<u32, CUDA> =
-                custos::Buffer::new(&device, width * height);
+            let mut pong_updated_labels: custos::Buffer<u32, _> =
+                custos::Buffer::new(device, width * height);
 
-            let mut labels: custos::Buffer<u32, CUDA> =
-                custos::Buffer::new(&device, width * height);
+            let mut labels: custos::Buffer<u32, _> =
+                custos::Buffer::new(device, width * height);
 
             // constant memory afterwards?
-            let mut links: custos::Buffer<u8, CUDA> =
-                custos::Buffer::new(&device, width * height * 4);
+            let mut links: custos::Buffer<u8, _> =
+                custos::Buffer::new(device, width * height * 4);
 
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
 
@@ -886,7 +888,7 @@ fn update_on_mode_change<'a>(
             // return;
             // *updated_labels = labels.clone(); // only for mouse pos debug
 
-            let mut has_updated: custos::Buffer<'_, _, CUDA> = CUBuffer::<_>::new(device, 1);
+            let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
 
             let start = Instant::now();
 
@@ -989,15 +991,15 @@ fn update_on_mode_change<'a>(
         Mode::ConnectionInfoWide => {
             println!("connection info");
 
-            let mut labels: custos::Buffer<u32, CUDA> =
-                custos::Buffer::new(&device, width * height);
+            let mut labels: custos::Buffer<u32, _> =
+                custos::Buffer::new(device, width * height);
 
             // constant memory afterwards?
-            let mut links: custos::Buffer<u16, CUDA> =
-                custos::Buffer::new(&device, width * height * 4);
+            let mut links: custos::Buffer<u16, _> =
+                custos::Buffer::new(device, width * height * 4);
 
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
-
+            let setup_dur = Instant::now();
             label_with_connection_info_more_32(
                 &mut labels,
                 &mut links,
@@ -1010,24 +1012,30 @@ fn update_on_mode_change<'a>(
             );
 
             device.stream().sync().unwrap();
+            println!("setup dur: {:?}", setup_dur.elapsed());
             // println!("links: {links:?}");
             // return;
             let mut pong_updated_labels = labels.clone();
             *colorless_updated_labels = labels.clone();
             device.stream().sync().unwrap();
 
-            let mut has_updated: custos::Buffer<'_, _, CUDA> = CUBuffer::<_>::new(device, 1);
+            
+            // let lazy_device = ManuallyDrop::new(CUDA::<Base>::new(0).unwrap());
+            // fn_cache(&lazy_device, CUDA_SOURCE_MORE32, "labelComponentsFar").unwrap();
+            let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
 
             let start = Instant::now();
 
             let mut ping = true;
             let mut iters = 0;
 
+
             // batch n (100) launches to reduce kernel overhead?
             loop {
                 // println!("hi");
                 if ping {
                     label_components_far(
+                        &device,
                         &labels,
                         &mut pong_updated_labels,
                         &links,
@@ -1039,6 +1047,7 @@ fn update_on_mode_change<'a>(
                     ping = false;
                 } else {
                     label_components_far(
+                        &device,
                         &pong_updated_labels,
                         &mut labels,
                         &links,
@@ -1084,6 +1093,16 @@ fn update_on_mode_change<'a>(
     }
 }
 
+#[test]
+fn test_cross_bufs() {
+    let device = CUDA::<Base>::new(0).unwrap();
+    let mut buf = device.buffer([1, 2, 3, 4, 5]);
+    
+    let device2 = CUDA::<Base>::new(0).unwrap();
+    device2.clear(&mut buf);
+    assert_eq!(buf.read(), [0; 5])
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct CUarray_st {
@@ -1114,7 +1133,7 @@ use crate::connected_comps::{
     copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, interleave_rgb, label_components,
     label_components_master_label, label_components_shared,
     label_components_shared_with_connections, label_components_shared_with_connections_and_links,
-    label_pixels, label_pixels_combinations, read_pixel, label_components_far, label_with_connection_info_more_32,
+    label_pixels, label_pixels_combinations, read_pixel, label_components_far, label_with_connection_info_more_32, CUDA_SOURCE_MORE32,
 };
 
 pub use self::CUresourcetype_enum as CUresourcetype;

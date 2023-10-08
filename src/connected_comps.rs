@@ -1,10 +1,10 @@
-use custos::{cuda::launch_kernel, prelude::CUBuffer};
+use custos::{cuda::{launch_kernel, CUDAPtr}, prelude::CUBuffer, CUDA, OnDropBuffer, OnNewBuffer};
 
 const CUDA_SOURCE: &str = include_str!("./connected_comps.cu");
-const CUDA_SOURCE_MORE32: &str = include_str!("./connection_info_more32.cu");
+pub const CUDA_SOURCE_MORE32: &str = include_str!("./connection_info_more32.cu");
 
-pub fn fill_cuda_surface(
-    to_fill: &mut CUBuffer<u8>,
+pub fn fill_cuda_surface<Mods: OnDropBuffer>(
+    to_fill: &mut custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
     r: u8,
@@ -22,11 +22,11 @@ pub fn fill_cuda_surface(
     )
 }
 
-pub fn interleave_rgb(
-    target: &mut CUBuffer<u8>,
-    red: &CUBuffer<u8>,
-    green: &CUBuffer<u8>,
-    blue: &CUBuffer<u8>,
+pub fn interleave_rgb<Mods: OnDropBuffer>(
+    target: &mut custos::Buffer<u8, CUDA<Mods>>,
+    red: &custos::Buffer<u8, CUDA<Mods>>,
+    green: &custos::Buffer<u8, CUDA<Mods>>,
+    blue: &custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
 ) -> custos::Result<()> {
@@ -41,7 +41,7 @@ pub fn interleave_rgb(
     )
 }
 
-pub fn label_pixels(target: &mut CUBuffer<u8>, width: usize, height: usize) -> custos::Result<()> {
+pub fn label_pixels<Mods: OnDropBuffer>(target: &mut custos::Buffer<u8, CUDA<Mods>>, width: usize, height: usize) -> custos::Result<()> {
     launch_kernel(
         target.device(),
         [64, 135, 1],
@@ -53,8 +53,8 @@ pub fn label_pixels(target: &mut CUBuffer<u8>, width: usize, height: usize) -> c
     )
 }
 
-pub fn label_pixels_combinations(
-    target: &mut CUBuffer<u8>,
+pub fn label_pixels_combinations<Mods: OnDropBuffer>(
+    target: &mut custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
 ) -> custos::Result<()> {
@@ -68,12 +68,12 @@ pub fn label_pixels_combinations(
         &[target, &width, &height],
     )
 }
-pub fn label_with_connection_info_more_32(
-    target: &mut CUBuffer<u32>,
-    links: &mut CUBuffer<u16>,
-    red: &CUBuffer<u8>,
-    green: &CUBuffer<u8>,
-    blue: &CUBuffer<u8>,
+pub fn label_with_connection_info_more_32<Mods: OnDropBuffer>(
+    target: &mut custos::Buffer<u32, CUDA<Mods>>,
+    links: &mut custos::Buffer<u16, CUDA<Mods>>,
+    red: &custos::Buffer<u8, CUDA<Mods>>,
+    green: &custos::Buffer<u8, CUDA<Mods>>,
+    blue: &custos::Buffer<u8, CUDA<Mods>>,
     cycles: i32,
     width: usize,
     height: usize,
@@ -90,12 +90,12 @@ pub fn label_with_connection_info_more_32(
     .unwrap()
 }
 // labelComponentsSharedWithConnectionsAndLinks
-pub fn label_with_connection_info(
-    target: &mut CUBuffer<u32>,
-    links: &mut CUBuffer<u8>,
-    red: &CUBuffer<u8>,
-    green: &CUBuffer<u8>,
-    blue: &CUBuffer<u8>,
+pub fn label_with_connection_info<Mods: OnDropBuffer>(
+    target: &mut custos::Buffer<u32, CUDA<Mods>>,
+    links: &mut custos::Buffer<u8, CUDA<Mods>>,
+    red: &custos::Buffer<u8, CUDA<Mods>>,
+    green: &custos::Buffer<u8, CUDA<Mods>>,
+    blue: &custos::Buffer<u8, CUDA<Mods>>,
     cycles: i32,
     width: usize,
     height: usize,
@@ -112,8 +112,8 @@ pub fn label_with_connection_info(
     .unwrap()
 }
 
-pub fn label_pixels_rowed(
-    target: &mut CUBuffer<u8>,
+pub fn label_pixels_rowed<Mods: OnDropBuffer>(
+    target: &mut custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
 ) -> custos::Result<()> {
@@ -128,16 +128,16 @@ pub fn label_pixels_rowed(
     )
 }
 
-pub fn label_components(
-    input: &CUBuffer<u8>,
-    out: &mut CUBuffer<u8>,
-    red: &CUBuffer<u8>,
-    green: &CUBuffer<u8>,
-    blue: &CUBuffer<u8>,
+pub fn label_components<Mods: OnDropBuffer>(
+    input: &custos::Buffer<u8, CUDA<Mods>>,
+    out: &mut custos::Buffer<u8, CUDA<Mods>>,
+    red: &custos::Buffer<u8, CUDA<Mods>>,
+    green: &custos::Buffer<u8, CUDA<Mods>>,
+    blue: &custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
     threshold: i32,
-    has_updated: &mut CUBuffer<u8>,
+    has_updated: &mut custos::Buffer<u8, CUDA<Mods>>,
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
@@ -160,16 +160,17 @@ pub fn label_components(
     )
 }
 
-pub fn label_components_far(
-    input: &CUBuffer<u32>,
-    out: &mut CUBuffer<u32>,
-    links: &CUBuffer<u16>,
+pub fn label_components_far<Mods: OnDropBuffer>(
+    device: &CUDA<Mods>,
+    input: &CUDAPtr<u32>,
+    out: &mut CUDAPtr<u32>,
+    links: &CUDAPtr<u16>,
     width: usize,
     height: usize,
-    has_updated: &mut CUBuffer<i32>,
+    has_updated: &mut CUDAPtr<i32>,
 ) -> custos::Result<()> {
     launch_kernel(
-        input.device(),
+        device,
         [width as u32 / 32 + 1, height as u32 / 32 + 1, 1],
         // [16, 16, 1],
         [32, 32, 1],
@@ -182,14 +183,14 @@ pub fn label_components_far(
     )
 }
 
-pub fn label_components_shared_with_connections_and_links(
-    input: &CUBuffer<u32>,
-    out: &mut CUBuffer<u32>,
-    links: &CUBuffer<u8>,
+pub fn label_components_shared_with_connections_and_links<Mods: OnDropBuffer>(
+    input: &custos::Buffer<u32, CUDA<Mods>>,
+    out: &mut custos::Buffer<u32, CUDA<Mods>>,
+    links: &custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
     threshold: i32,
-    has_updated: &mut CUBuffer<i32>,
+    has_updated: &mut custos::Buffer<i32, CUDA<Mods>>,
     offset_y: u8,
     offset_x: u8,
 ) -> custos::Result<()> {
@@ -216,14 +217,14 @@ pub fn label_components_shared_with_connections_and_links(
         ],
     )
 }
-pub fn label_components_shared_with_connections(
-    input: &CUBuffer<u32>,
-    out: &mut CUBuffer<u32>,
-    links: &CUBuffer<u8>,
+pub fn label_components_shared_with_connections<Mods: OnDropBuffer>(
+    input: &custos::Buffer<u32, CUDA<Mods>>,
+    out: &mut custos::Buffer<u32, CUDA<Mods>>,
+    links: &custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
     threshold: i32,
-    has_updated: &mut CUBuffer<i32>,
+    has_updated: &mut custos::Buffer<i32, CUDA<Mods>>,
     offset_y: u8,
     offset_x: u8,
 ) -> custos::Result<()> {
@@ -250,16 +251,16 @@ pub fn label_components_shared_with_connections(
         ],
     )
 }
-pub fn label_components_shared(
-    input: &CUBuffer<u8>,
-    out: &mut CUBuffer<u8>,
-    red: &CUBuffer<u8>,
-    green: &CUBuffer<u8>,
-    blue: &CUBuffer<u8>,
+pub fn label_components_shared<Mods: OnDropBuffer>(
+    input: &custos::Buffer<u8, CUDA<Mods>>,
+    out: &mut custos::Buffer<u8, CUDA<Mods>>,
+    red: &custos::Buffer<u8, CUDA<Mods>>,
+    green: &custos::Buffer<u8, CUDA<Mods>>,
+    blue: &custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
     threshold: i32,
-    has_updated: &mut CUBuffer<i32>,
+    has_updated: &mut custos::Buffer<i32, CUDA<Mods>>,
     offset_y: u8,
     offset_x: u8,
 ) -> custos::Result<()> {
@@ -289,16 +290,16 @@ pub fn label_components_shared(
     )
 }
 
-pub fn label_components_master_label(
-    input: &CUBuffer<u8>,
-    out: &mut CUBuffer<u8>,
-    red: &CUBuffer<u8>,
-    green: &CUBuffer<u8>,
-    blue: &CUBuffer<u8>,
+pub fn label_components_master_label<Mods: OnDropBuffer>(
+    input: &custos::Buffer<u8, CUDA<Mods>>,
+    out: &mut custos::Buffer<u8, CUDA<Mods>>,
+    red: &custos::Buffer<u8, CUDA<Mods>>,
+    green: &custos::Buffer<u8, CUDA<Mods>>,
+    blue: &custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
     threshold: i32,
-    has_updated: &mut CUBuffer<u8>,
+    has_updated: &mut custos::Buffer<u8, CUDA<Mods>>,
 ) -> custos::Result<()> {
     launch_kernel(
         input.device(),
@@ -321,12 +322,12 @@ pub fn label_components_master_label(
     )
 }
 
-pub fn label_components_rowed(
-    input: &CUBuffer<u8>,
-    out: &mut CUBuffer<u8>,
-    red: &CUBuffer<u8>,
-    green: &CUBuffer<u8>,
-    blue: &CUBuffer<u8>,
+pub fn label_components_rowed<Mods: OnDropBuffer>(
+    input: &custos::Buffer<u8, CUDA<Mods>>,
+    out: &mut custos::Buffer<u8, CUDA<Mods>>,
+    red: &custos::Buffer<u8, CUDA<Mods>>,
+    green: &custos::Buffer<u8, CUDA<Mods>>,
+    blue: &custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
 ) -> custos::Result<()> {
@@ -341,9 +342,9 @@ pub fn label_components_rowed(
     )
 }
 
-pub fn copy_to_surface(
-    labels: &CUBuffer<u8>,
-    surface: &mut CUBuffer<u8>,
+pub fn copy_to_surface<Mods: OnDropBuffer>(
+    labels: &custos::Buffer<u8, CUDA<Mods>>,
+    surface: &mut custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
 ) {
@@ -358,9 +359,9 @@ pub fn copy_to_surface(
     )
     .unwrap()
 }
-pub fn copy_to_surface_unsigned(
-    labels: &CUBuffer<u32>,
-    surface: &mut CUBuffer<u8>,
+pub fn copy_to_surface_unsigned<Mods: OnDropBuffer>(
+    labels: &custos::Buffer<u32, CUDA<Mods>>,
+    surface: &mut custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
 ) {
@@ -375,9 +376,9 @@ pub fn copy_to_surface_unsigned(
     )
     .unwrap()
 }
-pub fn copy_to_interleaved_buf(
-    labels: &CUBuffer<u32>,
-    surface: &mut CUBuffer<u8>,
+pub fn copy_to_interleaved_buf<Mods: OnDropBuffer>(
+    labels: &custos::Buffer<u32, CUDA<Mods>>,
+    surface: &mut custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
 ) {
@@ -392,9 +393,9 @@ pub fn copy_to_interleaved_buf(
     )
     .unwrap()
 }
-pub fn color_component_at_pixel(
-    texture: &CUBuffer<u8>,
-    surface: &mut CUBuffer<u8>,
+pub fn color_component_at_pixel<Mods: OnDropBuffer>(
+    texture: &custos::Buffer<u8, CUDA<Mods>>,
+    surface: &mut custos::Buffer<u8, CUDA<Mods>>,
     x: usize,
     y: usize,
     width: usize,
@@ -412,9 +413,9 @@ pub fn color_component_at_pixel(
     .unwrap()
 }
 
-pub fn color_component_at_pixel_exact(
-    texture: &CUBuffer<u8>,
-    surface: &mut CUBuffer<u8>,
+pub fn color_component_at_pixel_exact<Mods: OnDropBuffer>(
+    texture: &custos::Buffer<u8, CUDA<Mods>>,
+    surface: &mut custos::Buffer<u8, CUDA<Mods>>,
     x: usize,
     y: usize,
     width: usize,
@@ -435,16 +436,16 @@ pub fn color_component_at_pixel_exact(
     .unwrap()
 }
 
-pub fn read_pixel(
-    surface: &CUBuffer<u8>,
+pub fn read_pixel<Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()>>(
+    surface: &custos::Buffer<u8, CUDA<Mods>>,
     x: usize,
     y: usize,
     width: usize,
     height: usize,
 ) -> (u8, u8, u8) {
-    let mut r = CUBuffer::<u8>::new(surface.device(), 1);
-    let mut g = CUBuffer::<u8>::new(surface.device(), 1);
-    let mut b = CUBuffer::<u8>::new(surface.device(), 1);
+    let mut r = custos::Buffer::<u8, _>::new(surface.device(), 1);
+    let mut g = custos::Buffer::<u8, _>::new(surface.device(), 1);
+    let mut b = custos::Buffer::<u8, _>::new(surface.device(), 1);
     launch_kernel(
         surface.device(),
         [1, 1, 1],
