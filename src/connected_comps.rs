@@ -1,4 +1,8 @@
-use custos::{cuda::{launch_kernel, CUDAPtr}, prelude::CUBuffer, CUDA, OnDropBuffer, OnNewBuffer};
+use custos::{
+    cuda::{launch_kernel, CUDAPtr},
+    prelude::CUBuffer,
+    OnDropBuffer, OnNewBuffer, CUDA,
+};
 
 const CUDA_SOURCE: &str = include_str!("./connected_comps.cu");
 pub const CUDA_SOURCE_MORE32: &str = include_str!("./connection_info_more32.cu");
@@ -41,7 +45,11 @@ pub fn interleave_rgb<Mods: OnDropBuffer>(
     )
 }
 
-pub fn label_pixels<Mods: OnDropBuffer>(target: &mut custos::Buffer<u8, CUDA<Mods>>, width: usize, height: usize) -> custos::Result<()> {
+pub fn label_pixels<Mods: OnDropBuffer>(
+    target: &mut custos::Buffer<u8, CUDA<Mods>>,
+    width: usize,
+    height: usize,
+) -> custos::Result<()> {
     launch_kernel(
         target.device(),
         [64, 135, 1],
@@ -83,7 +91,7 @@ pub fn label_with_connection_info_more_32<Mods: OnDropBuffer>(
         [64, 256, 1],
         [32, 8, 1],
         0,
-      CUDA_SOURCE_MORE32,
+        CUDA_SOURCE_MORE32,
         "labelWithConnectionInfoMore32",
         &[target, links, red, green, blue, &cycles, &width, &height],
     )

@@ -11,11 +11,16 @@ use std::{
 use clap::{arg, command, Parser};
 use connected_comps::{label_components_rowed, label_pixels_rowed, label_with_connection_info};
 use custos::{
-    cuda::{api::{CUstream, Graph}, CUDAPtr, fn_cache},
+    cuda::{
+        api::{cuStreamBeginCapture, CUStreamCaptureMode, CUstream, Graph},
+        fn_cache,
+        lazy::LazyCudaGraph,
+        CUDAPtr,
+    },
     flag::AllocFlag,
     prelude::CUBuffer,
     static_api::static_cuda,
-    CUDA, Base, OnDropBuffer, OnNewBuffer, Lazy, Device, ClearBuf,
+    Base, ClearBuf, Device, Lazy, OnDropBuffer, OnNewBuffer, CUDA,
 };
 use glow::*;
 use glutin::event::VirtualKeyCode;
@@ -80,8 +85,10 @@ pub struct Args {
 unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()>>(
     raw_data: &[u8],
     device: &'a CUDA<Mods>,
-) -> Result<([custos::Buffer<'a, u8, CUDA<Mods>>; 3], i32, i32), Box<dyn std::error::Error + Send + Sync>>
-{
+) -> Result<
+    ([custos::Buffer<'a, u8, CUDA<Mods>>; 3], i32, i32),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let mut handle: nvjpegHandle_t = null_mut();
 
     let status = nvjpegCreateSimple(&mut handle);
@@ -347,7 +354,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             // ident: None,
         };
 
-        let mut surface: custos::Buffer<'_, u8, _>  = custos::Buffer {
+        let mut surface: custos::Buffer<'_, u8, _> = custos::Buffer {
             data: CUDAPtr {
                 ptr: cuda_surface,
                 flag: AllocFlag::Wrapper,
@@ -628,7 +635,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn update_on_mode_change<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()> + OnNewBuffer<u32, CUDA<Mods>, ()> + OnNewBuffer<i32, CUDA<Mods>, ()> + OnNewBuffer<u16, CUDA<Mods>, ()>>(
+fn update_on_mode_change<
+    'a,
+    Mods: OnDropBuffer
+        + OnNewBuffer<u8, CUDA<Mods>, ()>
+        + OnNewBuffer<u32, CUDA<Mods>, ()>
+        + OnNewBuffer<i32, CUDA<Mods>, ()>
+        + OnNewBuffer<u16, CUDA<Mods>, ()>,
+>(
     mode: &Mode,
     surface: &mut custos::Buffer<u8, CUDA<Mods>>,
     surface_texture: &mut custos::Buffer<u8, CUDA<Mods>>,
@@ -795,8 +809,7 @@ fn update_on_mode_change<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()
         }
         Mode::MouseHighlight => {}
         Mode::RowWise => {
-            let mut labels: custos::Buffer<u8, _> =
-                custos::Buffer::new(device, width * height * 4);
+            let mut labels: custos::Buffer<u8, _> = custos::Buffer::new(device, width * height * 4);
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
 
             label_pixels_combinations(&mut labels, width, height).unwrap();
@@ -806,7 +819,8 @@ fn update_on_mode_change<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()
             // *updated_labels = buf![0u8; width * height * 4].to_cuda();
             *updated_labels = custos::Buffer::new(&device, width * height * 4);
 
-            let mut has_updated: custos::Buffer<'_, u8, _> = custos::Buffer::<u8, _>::new(device, 1);
+            let mut has_updated: custos::Buffer<'_, u8, _> =
+                custos::Buffer::<u8, _>::new(device, 1);
 
             let start = Instant::now();
             for i in 0..width * height * 10 {
@@ -854,12 +868,10 @@ fn update_on_mode_change<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()
             let mut pong_updated_labels: custos::Buffer<u32, _> =
                 custos::Buffer::new(device, width * height);
 
-            let mut labels: custos::Buffer<u32, _> =
-                custos::Buffer::new(device, width * height);
+            let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
 
             // constant memory afterwards?
-            let mut links: custos::Buffer<u8, _> =
-                custos::Buffer::new(device, width * height * 4);
+            let mut links: custos::Buffer<u8, _> = custos::Buffer::new(device, width * height * 4);
 
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
 
@@ -991,12 +1003,10 @@ fn update_on_mode_change<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()
         Mode::ConnectionInfoWide => {
             println!("connection info");
 
-            let mut labels: custos::Buffer<u32, _> =
-                custos::Buffer::new(device, width * height);
+            let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
 
             // constant memory afterwards?
-            let mut links: custos::Buffer<u16, _> =
-                custos::Buffer::new(device, width * height * 4);
+            let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
 
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
             let setup_dur = Instant::now();
@@ -1019,7 +1029,6 @@ fn update_on_mode_change<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()
             *colorless_updated_labels = labels.clone();
             device.stream().sync().unwrap();
 
-            
             // let lazy_device = ManuallyDrop::new(CUDA::<Base>::new(0).unwrap());
             // fn_cache(&lazy_device, CUDA_SOURCE_MORE32, "labelComponentsFar").unwrap();
             let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
@@ -1028,46 +1037,116 @@ fn update_on_mode_change<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()
 
             let mut ping = true;
             let mut iters = 0;
+            let mut lazy_label = || {
+                unsafe {
+                    cuStreamBeginCapture(
+                        device.stream.0,
+                        CUStreamCaptureMode::CU_STREAM_CAPTURE_MODE_GLOBAL,
+                    )
+                }
+                .to_result()
+                .unwrap();
 
+                for _ in 0..140 {
+                    if ping {
+                        label_components_far(
+                            &device,
+                            &labels,
+                            &mut pong_updated_labels,
+                            &links,
+                            width,
+                            height,
+                            &mut has_updated,
+                        )
+                        .unwrap();
+                        ping = false;
+                    } else {
+                        label_components_far(
+                            &device,
+                            &pong_updated_labels,
+                            &mut labels,
+                            &links,
+                            width,
+                            height,
+                            &mut has_updated,
+                        )
+                        .unwrap();
+                        ping = true;
+                    }
+                }
+                let graph = LazyCudaGraph::new(device.stream()).unwrap();
+                graph.launch(device.stream.0).unwrap();
+                let new_graph = Instant::now();
+                device.stream().sync().unwrap();
+                println!("lazy graph exec: {:?}", new_graph.elapsed());
+            };
 
-            // batch n (100) launches to reduce kernel overhead?
-            loop {
-                // println!("hi");
-                if ping {
+            // lazy_label(); // 3ms
+            let mut no_ping_pong = || {
+                let out_label = unsafe { &mut *((&mut labels) as *mut custos::Buffer<_, _>) } ;
+                for i in 0..1 {
                     label_components_far(
                         &device,
                         &labels,
-                        &mut pong_updated_labels,
+                        out_label,
                         &links,
                         width,
                         height,
                         &mut has_updated,
                     )
                     .unwrap();
-                    ping = false;
-                } else {
-                    label_components_far(
-                        &device,
-                        &pong_updated_labels,
-                        &mut labels,
-                        &links,
-                        width,
-                        height,
-                        &mut has_updated,
-                    )
-                    .unwrap();
-                    ping = true;
-                }
-                iters += 1;
-                device.stream().sync().unwrap();
-                // break;
-                if has_updated.read()[0] == 0 {
-                    break;
-                }
-                
-                has_updated.clear();
-            }
+                    
+                    // device.stream().sync().unwrap();
+                    if has_updated.read()[0] == 0 {
+                        break;
+                    }
 
+                    has_updated.clear();
+                }
+            };
+
+            no_ping_pong();
+
+            let mut eager_label = || {
+                // batch n (100) launches to reduce kernel overhead?
+                loop {
+                    if ping {
+                        label_components_far(
+                            &device,
+                            &labels,
+                            &mut pong_updated_labels,
+                            &links,
+                            width,
+                            height,
+                            &mut has_updated,
+                        )
+                        .unwrap();
+                        ping = false;
+                    } else {
+                        label_components_far(
+                            &device,
+                            &pong_updated_labels,
+                            &mut labels,
+                            &links,
+                            width,
+                            height,
+                            &mut has_updated,
+                        )
+                        .unwrap();
+                        ping = true;
+                    }
+                    iters += 1;
+                    device.stream().sync().unwrap();
+                    // break;
+                    if has_updated.read()[0] == 0 {
+                        break;
+                    }
+
+                    has_updated.clear();
+                }
+            };
+
+            // eager_label(); // 4.3ms
             // device.stream().sync().unwrap();
             println!("labeling took {:?}, iters: {iters}", start.elapsed());
 
@@ -1097,7 +1176,7 @@ fn update_on_mode_change<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()
 fn test_cross_bufs() {
     let device = CUDA::<Base>::new(0).unwrap();
     let mut buf = device.buffer([1, 2, 3, 4, 5]);
-    
+
     let device2 = CUDA::<Base>::new(0).unwrap();
     device2.clear(&mut buf);
     assert_eq!(buf.read(), [0; 5])
@@ -1131,9 +1210,10 @@ pub enum CUresourcetype_enum {
 use crate::connected_comps::{
     color_component_at_pixel, color_component_at_pixel_exact, copy_to_interleaved_buf,
     copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, interleave_rgb, label_components,
-    label_components_master_label, label_components_shared,
+    label_components_far, label_components_master_label, label_components_shared,
     label_components_shared_with_connections, label_components_shared_with_connections_and_links,
-    label_pixels, label_pixels_combinations, read_pixel, label_components_far, label_with_connection_info_more_32, CUDA_SOURCE_MORE32,
+    label_pixels, label_pixels_combinations, label_with_connection_info_more_32, read_pixel,
+    CUDA_SOURCE_MORE32,
 };
 
 pub use self::CUresourcetype_enum as CUresourcetype;
