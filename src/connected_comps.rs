@@ -120,6 +120,47 @@ pub fn label_with_connection_info<Mods: OnDropBuffer>(
     .unwrap()
 }
 
+pub fn label_with_shared_links<Mods: OnDropBuffer>(
+    target: &mut custos::Buffer<u32, CUDA<Mods>>,
+    links: &mut custos::Buffer<u16, CUDA<Mods>>,
+    red: &custos::Buffer<u8, CUDA<Mods>>,
+    green: &custos::Buffer<u8, CUDA<Mods>>,
+    blue: &custos::Buffer<u8, CUDA<Mods>>,
+    width: usize,
+    height: usize,
+) {
+    launch_kernel(
+        target.device(),
+        [64, 256, 1],
+        [32, 32, 1],
+        0,
+        CUDA_SOURCE_MORE32,
+        "labelWithSharedLinks",
+        &[target, links, red, green, blue, &width, &height],
+    )
+    .unwrap()
+}
+
+pub fn globalize_links<Mods: OnDropBuffer>(
+    links: &mut custos::Buffer<u16, CUDA<Mods>>,
+    width: usize,
+    height: usize,
+) {
+    let max_x = (width as f32 / 32.).ceil() as i32;
+    for active_x in 0..max_x {
+        launch_kernel(
+            links.device(),
+            [1, 256, 1],
+            [32, 32, 1],
+            0,
+            CUDA_SOURCE_MORE32,
+            "globalizeLinks",
+            &[links, &active_x, &(max_x - active_x), &width, &height],
+        )
+        .unwrap();
+    }
+}
+
 pub fn label_pixels_rowed<Mods: OnDropBuffer>(
     target: &mut custos::Buffer<u8, CUDA<Mods>>,
     width: usize,

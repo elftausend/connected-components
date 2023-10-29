@@ -115,7 +115,7 @@ unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, (
     check!(status, "Could not get image info. ");
 
     heights[0] = heights[1] * 2;
-    heights[0] = 300;
+    // heights[0] = 300;
 
     println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
 
@@ -1010,16 +1010,30 @@ fn update_on_mode_change<
 
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
             let setup_dur = Instant::now();
-            label_with_connection_info_more_32(
+
+            label_with_shared_links(
                 &mut labels,
                 &mut links,
                 &channels[0],
                 &channels[1],
                 &channels[2],
-                13,
                 width,
                 height,
             );
+            globalize_links(&mut links, width, height);
+
+            // println!("links: {links:?}");
+
+            // label_with_connection_info_more_32(
+            //     &mut labels,
+            //     &mut links,
+            //     &channels[0],
+            //     &channels[1],
+            //     &channels[2],
+            //     5,
+            //     width,
+            //     height,
+            // );
 
             device.stream().sync().unwrap();
             println!("setup dur: {:?}", setup_dur.elapsed());
@@ -1083,19 +1097,20 @@ fn update_on_mode_change<
 
             // lazy_label(); // 3ms
             let mut no_ping_pong = || {
-                let out_label = unsafe { &mut *((&mut labels) as *mut custos::Buffer<_, _>) } ;
-                for i in 0..1 {
+                let out_label = unsafe { &mut *((&mut labels) as *mut custos::Buffer<_, _>) };
+                loop {
                     label_components_far(
                         &device,
                         &labels,
-                        out_label,
+                        &mut *unsafe { labels.shallow() },
+                        // out_label,
                         &links,
                         width,
                         height,
                         &mut has_updated,
                     )
                     .unwrap();
-                    
+
                     // device.stream().sync().unwrap();
                     if has_updated.read()[0] == 0 {
                         break;
@@ -1212,8 +1227,8 @@ use crate::connected_comps::{
     copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, interleave_rgb, label_components,
     label_components_far, label_components_master_label, label_components_shared,
     label_components_shared_with_connections, label_components_shared_with_connections_and_links,
-    label_pixels, label_pixels_combinations, label_with_connection_info_more_32, read_pixel,
-    CUDA_SOURCE_MORE32,
+    label_pixels, label_pixels_combinations, label_with_connection_info_more_32,
+    label_with_shared_links, read_pixel, CUDA_SOURCE_MORE32, globalize_links,
 };
 
 pub use self::CUresourcetype_enum as CUresourcetype;
