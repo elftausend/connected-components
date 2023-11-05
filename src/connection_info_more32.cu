@@ -97,6 +97,37 @@ extern "C" {
         labels[labelIdx] = label;
     }
 
+    __global__ void globalizeLinksVertical(ushort4* links, int active_yd, int active_yu, int width, int height) {
+        unsigned int x = x * blockDim.x + threadIdx.x;
+        unsigned int yd = active_yd * blockDim.y + threadIdx.y;
+        if (x >= width) {
+            return;
+        } 
+
+        // if (xl < width) {
+        //     unsigned short acc_link_z = links[y * width + xl].z;
+        //     unsigned short leftMove = acc_link_z;
+
+        //     while (leftMove != 0) {
+        //         leftMove = links[y * width + xl - acc_link_z].z;
+        //         acc_link_z += leftMove;
+        //     }
+        //     links[y * width + xl].z = acc_link_z;
+        // }
+
+        if (yd < height) {
+            unsigned short acc_link_y = links[yd * width + x].y;
+            unsigned short downMove = acc_link_y;
+
+            while (downMove != 0) {
+                downMove = links[(yd + acc_link_y) * width + x].y;
+                acc_link_y += downMove;
+            }
+            links[yd * width + x].y = acc_link_y;
+        }
+    }
+
+
     __global__ void globalizeLinksHorizontal(ushort4* links, int active_xr, int active_xl, int width, int height) {
         unsigned int xr = active_xr * blockDim.x + threadIdx.x;
         unsigned int xl = active_xl * blockDim.x + threadIdx.x;

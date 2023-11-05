@@ -1025,6 +1025,7 @@ fn update_on_mode_change<
                 height,
             );
             globalize_links_horizontal(&mut links, width, height);
+            globalize_links_vertical(&mut links, width, height);
 
             // println!("links: {links:?}");
 
@@ -1202,29 +1203,30 @@ fn update_on_mode_change<
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
             let setup_dur = Instant::now();
 
-            // label_with_shared_links(
-            //     &mut labels,
-            //     &mut links,
-            //     &channels[0],
-            //     &channels[1],
-            //     &channels[2],
-            //     width,
-            //     height,
-            // );
-            // globalize_links(&mut links, width, height);
-
-            // println!("links: {links:?}");
-
-            label_with_connection_info_more_32(
+            label_with_shared_links(
                 &mut labels,
                 &mut links,
                 &channels[0],
                 &channels[1],
                 &channels[2],
-                5,
                 width,
                 height,
             );
+            globalize_links_horizontal(&mut links, width, height);
+            globalize_links_vertical(&mut links, width, height);
+
+            // println!("links: {links:?}");
+
+            // label_with_connection_info_more_32(
+            //     &mut labels,
+            //     &mut links,
+            //     &channels[0],
+            //     &channels[1],
+            //     &channels[2],
+            //     5,
+            //     width,
+            //     height,
+            // );
 
             device.stream().sync().unwrap();
             classify_root_candidates(device, &labels, &links, &mut root_candidates, width, height).unwrap();
@@ -1320,7 +1322,7 @@ fn update_on_mode_change<
             eager_label(); // 4.3ms
             // device.stream().sync().unwrap();
             
-            println!("root_links: {root_links:?}");
+            // println!("root_links: {root_links:?}");
             println!("labeling took {:?}, iters: {iters}", start.elapsed());
 
             // copy_to_surface(&labels, surface, width, height);
@@ -1382,7 +1384,7 @@ use crate::{connected_comps::{
     label_components_far, label_components_master_label, label_components_shared,
     label_components_shared_with_connections, label_components_shared_with_connections_and_links,
     label_pixels, label_pixels_combinations, label_with_connection_info_more_32,
-    label_with_shared_links, read_pixel, CUDA_SOURCE_MORE32, globalize_links_horizontal,
+    label_with_shared_links, read_pixel, CUDA_SOURCE_MORE32, globalize_links_horizontal, globalize_links_vertical,
 }, root_label::{classify_root_candidates, label_components_far_root, init_root_links}};
 
 pub use self::CUresourcetype_enum as CUresourcetype;

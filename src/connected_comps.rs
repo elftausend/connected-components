@@ -141,6 +141,26 @@ pub fn label_with_shared_links<Mods: OnDropBuffer>(
     .unwrap()
 }
 
+pub fn globalize_links_vertical<Mods: OnDropBuffer>(
+    links: &mut custos::Buffer<u16, CUDA<Mods>>,
+    width: usize,
+    height: usize,
+) {
+    let max_y = (height as f32 / 32.).ceil() as i32;
+    for active_y in 0..max_y {
+        launch_kernel(
+            links.device(),
+            [256, 1, 1],
+            [32, 32, 1],
+            0,
+            CUDA_SOURCE_MORE32,
+            "globalizeLinksVertical",
+            &[links, &active_y, &(max_y - active_y), &width, &height],
+        )
+        .unwrap();
+    }
+}
+
 pub fn globalize_links_horizontal<Mods: OnDropBuffer>(
     links: &mut custos::Buffer<u16, CUDA<Mods>>,
     width: usize,
