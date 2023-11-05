@@ -1251,10 +1251,11 @@ fn update_on_mode_change<
             let mut iters = 0;
 
             let mut no_ping_pong = || {
-                let out_label = unsafe { &mut *((&mut labels) as *mut custos::Buffer<_, _>) };
                 loop {
-                    label_components_far(
+                    label_components_far_root(
                         &device,
+                        &mut root_links,
+                        &root_candidates,
                         &labels,
                         &mut *unsafe { labels.shallow() },
                         // out_label,
@@ -1266,6 +1267,7 @@ fn update_on_mode_change<
                     .unwrap();
 
                     // device.stream().sync().unwrap();
+                    iters += 1;
                     if has_updated.read()[0] == 0 {
                         break;
                     }
@@ -1274,7 +1276,7 @@ fn update_on_mode_change<
                 }
             };
 
-            // no_ping_pong();
+            no_ping_pong();
 
             let mut eager_label = || {
                 // batch n (100) launches to reduce kernel overhead?
@@ -1319,7 +1321,7 @@ fn update_on_mode_change<
                 }
             };
 
-            eager_label(); // 4.3ms
+            // eager_label(); // 4.3ms
             // device.stream().sync().unwrap();
             
             // println!("root_links: {root_links:?}");

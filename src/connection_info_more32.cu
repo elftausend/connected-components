@@ -326,6 +326,17 @@ extern "C" {
         unsigned int farDownIdx = (y + currentLink.y) * width + x;
         unsigned int farLeftIdx = outIdx - currentLink.z;
         unsigned int farUpIdx = (y - currentLink.w) * width + x;
+        
+        unsigned int farDownLabel = input[farDownIdx];
+
+        if (farDownLabel > currentLabel) {
+            currentLabel = farDownLabel;
+            *hasUpdated = 1;
+            out[outIdx] =  currentLabel;
+
+            // if a larger label was found downwards, it is (probably) larger than the rest
+            return;
+        }    
 
         unsigned int currentRootLink = rootLinks[outIdx];
 
@@ -336,7 +347,6 @@ extern "C" {
             setRootLinkIfCandidate(farDownIdx, outIdx, rootLinks, rootCandidates);
 
             if (rootLinks[outIdx] == outIdx && !rootCandidates[outIdx]) {
-                // should not require another no root link check => this condition should always be false for root candidates
                 if (rootLinks[farDownIdx] != farDownIdx) {
                     rootLinks[outIdx] = rootLinks[farDownIdx];
                 }
@@ -356,8 +366,9 @@ extern "C" {
             if (rootLabel > currentLabel) {
                 currentLabel = rootLabel;
                 *hasUpdated = 1;
-                // out[outIdx] = currentLabel;
-                // return;
+
+                out[outIdx] = currentLabel;
+                return;
             }
         }
 
@@ -366,14 +377,9 @@ extern "C" {
         if (farRightLabel > currentLabel) {
             currentLabel = farRightLabel;
             *hasUpdated = 1;
+            out[outIdx] =  currentLabel;
+            return;
         }
-    
-        unsigned int farDownLabel = input[farDownIdx];
-
-        if (farDownLabel > currentLabel) {
-            currentLabel = farDownLabel;
-            *hasUpdated = 1;
-        }    
 
         unsigned int farLeftLabel = input[farLeftIdx];
 
