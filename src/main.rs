@@ -1,6 +1,7 @@
 mod connected_comps;
 // mod jpeg_decoder;
 mod utils;
+mod root_label;
 
 use std::{
     mem::{size_of, ManuallyDrop},
@@ -45,6 +46,7 @@ enum Mode {
     RowWise,
     ConnectionInfoWide,
     ConnectionInfo32x32,
+    RootLabel,
 }
 
 impl Mode {
@@ -53,7 +55,8 @@ impl Mode {
             Mode::None => Mode::Labels,
             Mode::Labels => Mode::MouseHighlight,
             Mode::MouseHighlight => Mode::RowWise,
-            Mode::RowWise => Mode::ConnectionInfoWide,
+            Mode::RowWise => Mode::RootLabel,
+            Mode::RootLabel => Mode::ConnectionInfoWide,
             Mode::ConnectionInfoWide => Mode::ConnectionInfo32x32,
             Mode::ConnectionInfo32x32 => Mode::None,
         };
@@ -68,6 +71,7 @@ impl From<u8> for Mode {
             1 => Mode::Labels,
             2 => Mode::MouseHighlight,
             3 => Mode::RowWise,
+            6 => Mode::RootLabel,
             7 => Mode::ConnectionInfoWide,
             8 => Mode::ConnectionInfo32x32,
             _ => Mode::None,
@@ -115,7 +119,7 @@ unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, (
     check!(status, "Could not get image info. ");
 
     heights[0] = heights[1] * 2;
-    // heights[0] = 300;
+    heights[0] = 28;
 
     println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
 
@@ -1184,6 +1188,156 @@ fn update_on_mode_change<
 
             device.stream().sync().unwrap();
         }
+        Mode::RootLabel => {
+            println!("connection info");
+
+            let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
+
+            // constant memory afterwards?
+            let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
+
+            let mut root_candidates: custos::Buffer<u8, _> = custos::Buffer::new(device, width * height);
+            let mut root_links: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
+
+            // let mut labels = buf![0u8; width * height * 4].to_cuda();
+            let setup_dur = Instant::now();
+
+            // label_with_shared_links(
+            //     &mut labels,
+            //     &mut links,
+            //     &channels[0],
+            //     &channels[1],
+            //     &channels[2],
+            //     width,
+            //     height,
+            // );
+            // globalize_links(&mut links, width, height);
+
+            // println!("links: {links:?}");
+
+            label_with_connection_info_more_32(
+                &mut labels,
+                &mut links,
+                &channels[0],
+                &channels[1],
+                &channels[2],
+                5,
+                width,
+                height,
+            );
+
+            device.stream().sync().unwrap();
+            classify_root_candidates(device, &labels, &links, &mut root_candidates, width, height).unwrap();
+
+            // println!("root candidates: {root_candidates:?}");
+
+            init_root_links(device, &mut root_links, width, height).unwrap();
+
+            device.stream().sync().unwrap();
+            println!("setup dur: {:?}", setup_dur.elapsed());
+            // println!("links: {links:?}");
+            // return;
+            let mut pong_updated_labels = labels.clone();
+            *colorless_updated_labels = labels.clone();
+            device.stream().sync().unwrap();
+
+            let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
+
+            let start = Instant::now();
+
+            let mut ping = true;
+            let mut iters = 0;
+
+            let mut no_ping_pong = || {
+                let out_label = unsafe { &mut *((&mut labels) as *mut custos::Buffer<_, _>) };
+                loop {
+                    label_components_far(
+                        &device,
+                        &labels,
+                        &mut *unsafe { labels.shallow() },
+                        // out_label,
+                        &links,
+                        width,
+                        height,
+                        &mut has_updated,
+                    )
+                    .unwrap();
+
+                    // device.stream().sync().unwrap();
+                    if has_updated.read()[0] == 0 {
+                        break;
+                    }
+
+                    has_updated.clear();
+                }
+            };
+
+            // no_ping_pong();
+
+            let mut eager_label = || {
+                // batch n (100) launches to reduce kernel overhead?
+                loop {
+                    if ping {
+                        label_components_far_root(
+                            &device,
+                            &mut root_links,
+                            &root_candidates,
+                            &labels,
+                            &mut pong_updated_labels,
+                            &links,
+                            width,
+                            height,
+                            &mut has_updated,
+                        )
+                        .unwrap();
+                        ping = false;
+                    } else {
+                        label_components_far_root(
+                            &device,
+                            &mut root_links,
+                            &root_candidates,
+                            &pong_updated_labels,
+                            &mut labels,
+                            &links,
+                            width,
+                            height,
+                            &mut has_updated,
+                        )
+                        .unwrap();
+                        ping = true;
+                    }
+                    iters += 1;
+                    device.stream().sync().unwrap();
+                    // break;
+                    if has_updated.read()[0] == 0 {
+                        break;
+                    }
+
+                    has_updated.clear();
+                }
+            };
+
+            eager_label(); // 4.3ms
+            // device.stream().sync().unwrap();
+            
+            println!("root_links: {root_links:?}");
+            println!("labeling took {:?}, iters: {iters}", start.elapsed());
+
+            // copy_to_surface(&labels, surface, width, height);
+            if ping {
+                *colorless_updated_labels = labels.clone();
+                copy_to_surface_unsigned(&labels, surface, width, height);
+                // println!("labels: {:?}", labels.read());
+                copy_to_interleaved_buf(&labels, updated_labels, width, height);
+            } else {
+                *colorless_updated_labels = pong_updated_labels.clone();
+                // println!("labels: {:?}", pong_updated_labels.read());
+                copy_to_surface_unsigned(&pong_updated_labels, surface, width, height);
+                copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
+            }
+
+            device.stream().sync().unwrap();           
+        }
     }
 }
 
@@ -1222,14 +1376,14 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::connected_comps::{
+use crate::{connected_comps::{
     color_component_at_pixel, color_component_at_pixel_exact, copy_to_interleaved_buf,
     copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, interleave_rgb, label_components,
     label_components_far, label_components_master_label, label_components_shared,
     label_components_shared_with_connections, label_components_shared_with_connections_and_links,
     label_pixels, label_pixels_combinations, label_with_connection_info_more_32,
     label_with_shared_links, read_pixel, CUDA_SOURCE_MORE32, globalize_links,
-};
+}, root_label::{classify_root_candidates, label_components_far_root, init_root_links}};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 

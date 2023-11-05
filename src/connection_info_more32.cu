@@ -243,6 +243,137 @@ extern "C" {
 
     }
 
+    // could use bit shifting => store root bit in label
+    __global__ void classifyRootCandidates(unsigned int* input, ushort4* links, unsigned char* rootCandidates, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (x >= width || y >= height) {
+            return;
+        }
+
+        int outIdx = y * width + x;
+        
+        unsigned int currentLabel = input[outIdx];
+        ushort4 currentLink = links[outIdx];
+
+        // if (currentLink.x == 0 && currentLink.y == 0) {
+        //     rootCandidates[outIdx] = 1;
+        // }
+        unsigned int farRightLabel = input[outIdx + (int) currentLink.x];
+        unsigned int farDownLabel = input[(y + currentLink.y) * width + x];
+
+        if (farRightLabel > currentLabel || farDownLabel > currentLabel) {
+            rootCandidates[outIdx] = 0;
+            return;
+        }
+        rootCandidates[outIdx] = 1;
+    }
+
+    __device__ void setRootLinkIfCandidate(unsigned int maybe_root_link_idx, unsigned int currentIdx, unsigned int* rootLinks, unsigned char* rootCandidates) {
+        if (rootCandidates[maybe_root_link_idx]) {
+            rootLinks[currentIdx] = maybe_root_link_idx;
+        }
+    }
+
+    __global__ void labelComponentsFarRootCandidates(unsigned int* rootLinks, unsigned char* rootCandidates, unsigned int* input, unsigned int* out, ushort4* links, int width, int height, int* hasUpdated) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (x >= width || y >= height) {
+            return;
+        }
+
+        int outIdx = y * width + x;
+        
+        unsigned int currentLabel = input[outIdx];
+
+        ushort4 currentLink = links[outIdx];
+
+
+        unsigned int farRightIdx = outIdx + (int) currentLink.x;
+        unsigned int farDownIdx = (y + currentLink.y) * width + x;
+        unsigned int farLeftIdx = outIdx - currentLink.z;
+        unsigned int farUpIdx = (y - currentLink.w) * width + x;
+
+        unsigned int currentRootLink = rootLinks[outIdx];
+
+        unsigned char no_root_link = currentRootLink == outIdx;
+
+        if (no_root_link) {
+            setRootLinkIfCandidate(farRightIdx, outIdx, rootLinks, rootCandidates);
+            setRootLinkIfCandidate(farDownIdx, outIdx, rootLinks, rootCandidates);
+
+            if (rootLinks[outIdx] == outIdx && !rootCandidates[outIdx]) {
+                // should not require another no root link check => this condition should always be false for root candidates
+                if (rootLinks[farDownIdx] != farDownIdx) {
+                    rootLinks[outIdx] = farDownIdx;
+                }
+                else if (rootLinks[farRightIdx] != farRightIdx) {
+                    rootLinks[outIdx] = farRightIdx;
+                }
+                else if (rootLinks[farLeftIdx] != farLeftIdx) {
+                    rootLinks[outIdx] = farLeftIdx;
+                }
+                else if (rootLinks[farUpIdx] != farUpIdx) {
+                    rootLinks[outIdx] = farUpIdx;
+                }
+            }
+            
+        } else {
+            unsigned int rootLabel = input[rootLinks[outIdx]];
+            if (rootLabel > currentLabel) {
+                currentLabel = rootLabel;
+                *hasUpdated = 1;
+                out[outIdx] = currentLabel;
+                // return;
+            }
+        }
+
+        unsigned int farRightLabel = input[farRightIdx];
+
+        if (farRightLabel > currentLabel) {
+            currentLabel = farRightLabel;
+            *hasUpdated = 1;
+        }
+    
+        unsigned int farDownLabel = input[farDownIdx];
+
+        if (farDownLabel > currentLabel) {
+            currentLabel = farDownLabel;
+            *hasUpdated = 1;
+        }    
+
+        unsigned int farLeftLabel = input[farLeftIdx];
+
+        if (farLeftLabel > currentLabel) {
+            currentLabel = farLeftLabel;
+            *hasUpdated = 1;
+        }
+        
+        unsigned int farUpLabel = input[farUpIdx];
+
+        if (farUpLabel > currentLabel) {
+            currentLabel = farUpLabel;
+            *hasUpdated = 1;
+        }
+        
+        int leftLabel = input[outIdx - min(1, currentLink.z)];
+
+        if (leftLabel > currentLabel) {
+            currentLabel = leftLabel;
+            *hasUpdated = 1;
+        }
+  
+        int upLabel = input[(y - min(1, currentLink.w)) * width + x];
+
+        if (upLabel > currentLabel) {
+            currentLabel = upLabel;
+            *hasUpdated = 1;
+        }
+ 
+        out[outIdx] = currentLabel;
+    }
     __global__ void labelComponentsFar(unsigned int* input, unsigned int* out, ushort4* links, int width, int height, int* hasUpdated) {
         // return;
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -329,6 +460,18 @@ extern "C" {
         // }
         out[outIdx] = currentLabel;
     }
- 
+    
+    __global__ void initRootLinks(unsigned int* rootLinks, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (x >= width || y >= height) {
+            return;
+        }
+
+        int outIdx = y * width + x;
+        rootLinks[outIdx] = outIdx;
+
+    }
 
 }
