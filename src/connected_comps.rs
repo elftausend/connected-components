@@ -141,7 +141,7 @@ pub fn label_with_shared_links<Mods: OnDropBuffer>(
     .unwrap()
 }
 
-pub fn globalize_links<Mods: OnDropBuffer>(
+pub fn globalize_links_horizontal<Mods: OnDropBuffer>(
     links: &mut custos::Buffer<u16, CUDA<Mods>>,
     width: usize,
     height: usize,
@@ -154,7 +154,7 @@ pub fn globalize_links<Mods: OnDropBuffer>(
             [32, 32, 1],
             0,
             CUDA_SOURCE_MORE32,
-            "globalizeLinks",
+            "globalizeLinksHorizontal",
             &[links, &active_x, &(max_x - active_x), &width, &height],
         )
         .unwrap();

@@ -97,7 +97,7 @@ extern "C" {
         labels[labelIdx] = label;
     }
 
-    __global__ void globalizeLinks(ushort4* links, int active_xr, int active_xl, int width, int height) {
+    __global__ void globalizeLinksHorizontal(ushort4* links, int active_xr, int active_xl, int width, int height) {
         unsigned int xr = active_xr * blockDim.x + threadIdx.x;
         unsigned int xl = active_xl * blockDim.x + threadIdx.x;
         unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -307,16 +307,16 @@ extern "C" {
             if (rootLinks[outIdx] == outIdx && !rootCandidates[outIdx]) {
                 // should not require another no root link check => this condition should always be false for root candidates
                 if (rootLinks[farDownIdx] != farDownIdx) {
-                    rootLinks[outIdx] = farDownIdx;
+                    rootLinks[outIdx] = rootLinks[farDownIdx];
                 }
                 else if (rootLinks[farRightIdx] != farRightIdx) {
-                    rootLinks[outIdx] = farRightIdx;
+                    rootLinks[outIdx] = rootLinks[farRightIdx];
                 }
                 else if (rootLinks[farLeftIdx] != farLeftIdx) {
-                    rootLinks[outIdx] = farLeftIdx;
+                    rootLinks[outIdx] = rootLinks[farLeftIdx];
                 }
                 else if (rootLinks[farUpIdx] != farUpIdx) {
-                    rootLinks[outIdx] = farUpIdx;
+                    rootLinks[outIdx] = rootLinks[farUpIdx];
                 }
             }
             
@@ -325,7 +325,7 @@ extern "C" {
             if (rootLabel > currentLabel) {
                 currentLabel = rootLabel;
                 *hasUpdated = 1;
-                out[outIdx] = currentLabel;
+                // out[outIdx] = currentLabel;
                 // return;
             }
         }

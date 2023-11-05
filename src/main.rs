@@ -119,7 +119,7 @@ unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, (
     check!(status, "Could not get image info. ");
 
     heights[0] = heights[1] * 2;
-    heights[0] = 28;
+    // heights[0] = 28;
 
     println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
 
@@ -1024,7 +1024,7 @@ fn update_on_mode_change<
                 width,
                 height,
             );
-            globalize_links(&mut links, width, height);
+            globalize_links_horizontal(&mut links, width, height);
 
             // println!("links: {links:?}");
 
@@ -1119,7 +1119,7 @@ fn update_on_mode_change<
                     if has_updated.read()[0] == 0 {
                         break;
                     }
-
+                    iters += 1;
                     has_updated.clear();
                 }
             };
@@ -1382,7 +1382,7 @@ use crate::{connected_comps::{
     label_components_far, label_components_master_label, label_components_shared,
     label_components_shared_with_connections, label_components_shared_with_connections_and_links,
     label_pixels, label_pixels_combinations, label_with_connection_info_more_32,
-    label_with_shared_links, read_pixel, CUDA_SOURCE_MORE32, globalize_links,
+    label_with_shared_links, read_pixel, CUDA_SOURCE_MORE32, globalize_links_horizontal,
 }, root_label::{classify_root_candidates, label_components_far_root, init_root_links}};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
