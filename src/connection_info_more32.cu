@@ -14,7 +14,6 @@ extern "C" {
         
         __shared__ ushort4 sharedLinks[32][32];
         ushort4 currentLink = make_ushort4(0, 0, 0, 0);
-
         
         // right 
         if (x < width-1) {

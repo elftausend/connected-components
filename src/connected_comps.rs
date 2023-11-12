@@ -131,7 +131,7 @@ pub fn label_with_shared_links<Mods: OnDropBuffer>(
 ) {
     launch_kernel(
         target.device(),
-        [64, 256, 1],
+        [128, 256, 1],
         [32, 32, 1],
         0,
         CUDA_SOURCE_MORE32,

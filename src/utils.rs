@@ -4,7 +4,7 @@ use custos::{
     cuda::{fn_cache, CUDAPtr},
     flag::AllocFlag,
     prelude::CUBuffer,
-    CUDA,
+    CUDA, Buffer,
 };
 
 use crate::check_error;
@@ -15,7 +15,7 @@ pub fn get_constant_memory<'a, T>(
     src: &str,
     fn_name: &str,
     var_name: &str,
-) -> CUBuffer<'a, T> {
+) -> Buffer<'a, T, CUDA> {
     let func = fn_cache(device, src, fn_name).unwrap();
 
     let module = device.cuda_modules.borrow().get(&func).unwrap().0;
@@ -31,7 +31,7 @@ pub fn get_constant_memory<'a, T>(
         )
     };
 
-    CUBuffer {
+    Buffer {
         data: CUDAPtr {
             ptr: filter_data_ptr,
             flag: AllocFlag::Wrapper,
