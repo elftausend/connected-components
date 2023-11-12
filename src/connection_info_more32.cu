@@ -96,13 +96,31 @@ extern "C" {
         labels[labelIdx] = label;
     }
 
-    __global__ void setRootLabelIter(ushort4* links, unsigned int* labels, int width, int height) {
+    __global__ void setRootLabelIter(ushort4* links, unsigned int* labels, unsigned char* rootCandidates, int width, int height) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
         if (x >= width || y >= height) {
             return;
         } 
+        int outIdx = y * width + x;
+        
+        unsigned int currentLabel = labels[outIdx];
 
+        ushort4 currentLink = links[outIdx];
+
+
+        unsigned int farRightIdx = outIdx + (int) currentLink.x;
+        unsigned int farDownIdx = (y + currentLink.y) * width + x;
+        // unsigned int farLeftIdx = outIdx - currentLink.z;
+        // unsigned int farUpIdx = (y - currentLink.w) * width + x;
+        
+        if (rootCandidates[farRightIdx]) {
+            labels[outIdx] = labels[farRightIdx];
+        }
+
+        if (rootCandidates[farDownIdx]) {
+            labels[outIdx] = labels[farDownIdx];
+        }
     }
 
     __global__ void globalizeLinksVertical(ushort4* links, int active_yd, int active_yu, int width, int height) {
@@ -347,11 +365,15 @@ extern "C" {
         }
 
         if (rootCandidates[currentLabel - 1]) {
+            // unsigned int rootLabel = input[currentLabel - 1];
+            // if (rootLabel > currentLabel) {
             currentLabel = input[currentLabel - 1];
-            // *hasUpdated = 1;
+                // *hasUpdated = 1;
 
-            // out[outIdx] = currentLabel;
-            // return;
+                // out[outIdx] = currentLabel;
+                // return;
+
+            // }
         }
 
         // unsigned int currentRootLink = rootLinks[outIdx];

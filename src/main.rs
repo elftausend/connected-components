@@ -119,7 +119,7 @@ unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, (
     check!(status, "Could not get image info. ");
 
     heights[0] = heights[1] * 2;
-    // heights[0] = 3000;
+    heights[0] = 3000;
 
 
     println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
