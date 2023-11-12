@@ -96,6 +96,15 @@ extern "C" {
         labels[labelIdx] = label;
     }
 
+    __global__ void setRootLabelIter(ushort4* links, unsigned int* labels, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+        if (x >= width || y >= height) {
+            return;
+        } 
+
+    }
+
     __global__ void globalizeLinksVertical(ushort4* links, int active_yd, int active_yu, int width, int height) {
         unsigned int x = x * blockDim.x + threadIdx.x;
         unsigned int yd = active_yd * blockDim.y + threadIdx.y;
@@ -335,41 +344,49 @@ extern "C" {
 
             // if a larger label was found downwards, it is (probably) larger than the rest
             return;
-        }    
-
-        unsigned int currentRootLink = rootLinks[outIdx];
-
-        unsigned char no_root_link = currentRootLink == outIdx;
-
-        if (no_root_link) {
-            setRootLinkIfCandidate(farRightIdx, outIdx, rootLinks, rootCandidates);
-            setRootLinkIfCandidate(farDownIdx, outIdx, rootLinks, rootCandidates);
-
-            if (rootLinks[outIdx] == outIdx && !rootCandidates[outIdx]) {
-                if (rootLinks[farDownIdx] != farDownIdx) {
-                    rootLinks[outIdx] = rootLinks[farDownIdx];
-                }
-                else if (rootLinks[farRightIdx] != farRightIdx) {
-                    rootLinks[outIdx] = rootLinks[farRightIdx];
-                }
-                else if (rootLinks[farLeftIdx] != farLeftIdx) {
-                    rootLinks[outIdx] = rootLinks[farLeftIdx];
-                }
-                else if (rootLinks[farUpIdx] != farUpIdx) {
-                    rootLinks[outIdx] = rootLinks[farUpIdx];
-                }
-            }
-            
-        } else {
-            unsigned int rootLabel = input[rootLinks[outIdx]];
-            if (rootLabel > currentLabel) {
-                currentLabel = rootLabel;
-                *hasUpdated = 1;
-
-                out[outIdx] = currentLabel;
-                return;
-            }
         }
+
+        if (rootCandidates[currentLabel - 1]) {
+            currentLabel = input[currentLabel - 1];
+            // *hasUpdated = 1;
+
+            // out[outIdx] = currentLabel;
+            // return;
+        }
+
+        // unsigned int currentRootLink = rootLinks[outIdx];
+
+        // unsigned char no_root_link = currentRootLink == outIdx;
+
+        // if (no_root_link) {
+        //     setRootLinkIfCandidate(farRightIdx, outIdx, rootLinks, rootCandidates);
+        //     setRootLinkIfCandidate(farDownIdx, outIdx, rootLinks, rootCandidates);
+
+        //     if (rootLinks[outIdx] == outIdx && !rootCandidates[outIdx]) {
+        //         if (rootLinks[farDownIdx] != farDownIdx) {
+        //             rootLinks[outIdx] = rootLinks[farDownIdx];
+        //         }
+        //         else if (rootLinks[farRightIdx] != farRightIdx) {
+        //             rootLinks[outIdx] = rootLinks[farRightIdx];
+        //         }
+        //         else if (rootLinks[farLeftIdx] != farLeftIdx) {
+        //             rootLinks[outIdx] = rootLinks[farLeftIdx];
+        //         }
+        //         else if (rootLinks[farUpIdx] != farUpIdx) {
+        //             rootLinks[outIdx] = rootLinks[farUpIdx];
+        //         }
+        //     }
+            
+        // } else {
+        //     unsigned int rootLabel = input[rootLinks[outIdx]];
+        //     if (rootLabel > currentLabel) {
+        //         currentLabel = rootLabel;
+        //         *hasUpdated = 1;
+
+        //         out[outIdx] = currentLabel;
+        //         return;
+        //     }
+        // }
 
         unsigned int farRightLabel = input[farRightIdx];
 
