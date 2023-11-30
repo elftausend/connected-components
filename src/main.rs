@@ -1,7 +1,7 @@
 mod connected_comps;
 // mod jpeg_decoder;
-mod utils;
 mod root_label;
+mod utils;
 
 use std::{
     mem::{size_of, ManuallyDrop},
@@ -86,7 +86,7 @@ pub struct Args {
     image_path: String,
 }
 
-unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()>>(
+unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>>>(
     raw_data: &[u8],
     device: &'a CUDA<Mods>,
 ) -> Result<
@@ -120,7 +120,6 @@ unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, (
 
     heights[0] = heights[1] * 2;
     heights[0] = 3000;
-
 
     println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
 
@@ -640,14 +639,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn update_on_mode_change<
-    'a,
-    Mods: OnDropBuffer
-        + OnNewBuffer<u8, CUDA<Mods>, ()>
-        + OnNewBuffer<u32, CUDA<Mods>, ()>
-        + OnNewBuffer<i32, CUDA<Mods>, ()>
-        + OnNewBuffer<u16, CUDA<Mods>, ()>,
->(
+fn update_on_mode_change<'a, Mods>(
     mode: &Mode,
     surface: &mut custos::Buffer<u8, CUDA<Mods>>,
     surface_texture: &mut custos::Buffer<u8, CUDA<Mods>>,
@@ -658,7 +650,13 @@ fn update_on_mode_change<
     updated_labels: &mut custos::Buffer<u8, CUDA<Mods>>,
     colorless_updated_labels: &mut custos::Buffer<u32, CUDA<Mods>>,
     threshold: i32,
-) {
+) where
+    Mods: OnDropBuffer
+        + OnNewBuffer<u8, CUDA<Mods>>
+        + OnNewBuffer<u32, CUDA<Mods>>
+        + OnNewBuffer<i32, CUDA<Mods>>
+        + OnNewBuffer<u16, CUDA<Mods>>,
+{
     match mode {
         Mode::None => {
             interleave_rgb(
@@ -1198,8 +1196,10 @@ fn update_on_mode_change<
             // constant memory afterwards?
             let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
 
-            let mut root_candidates: custos::Buffer<u8, _> = custos::Buffer::new(device, width * height);
-            let mut root_links: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
+            // let mut root_candidates: custos::Buffer<u8, _> =
+            //     custos::Buffer::new(device, width * height);
+            // let mut root_links: custos::Buffer<u32, _> =
+            //     custos::Buffer::new(device, width * height);
 
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
             let setup_dur = Instant::now();
@@ -1230,11 +1230,13 @@ fn update_on_mode_change<
             // );
 
             device.stream().sync().unwrap();
-            classify_root_candidates(device, &labels, &links, &mut root_candidates, width, height).unwrap();
+
+            classify_root_candidates_shifting(device, &labels, &links, width, height)
+                .unwrap();
 
             // println!("root candidates: {root_candidates:?}");
 
-            init_root_links(device, &mut root_links, width, height).unwrap();
+            // init_root_links(device, &mut root_links, width, height).unwrap();
 
             device.stream().sync().unwrap();
             println!("setup dur: {:?}", setup_dur.elapsed());
@@ -1255,8 +1257,8 @@ fn update_on_mode_change<
                 loop {
                     label_components_far_root(
                         &device,
-                        &mut root_links,
-                        &root_candidates,
+                        // &mut root_links,
+                        // &root_candidates,
                         &labels,
                         &mut *unsafe { labels.shallow() },
                         // out_label,
@@ -1285,8 +1287,8 @@ fn update_on_mode_change<
                     if ping {
                         label_components_far_root(
                             &device,
-                            &mut root_links,
-                            &root_candidates,
+                            // &mut root_links,
+                            // &root_candidates,
                             &labels,
                             &mut pong_updated_labels,
                             &links,
@@ -1299,8 +1301,8 @@ fn update_on_mode_change<
                     } else {
                         label_components_far_root(
                             &device,
-                            &mut root_links,
-                            &root_candidates,
+                            // &mut root_links,
+                            // &root_candidates,
                             &pong_updated_labels,
                             &mut labels,
                             &links,
@@ -1324,7 +1326,7 @@ fn update_on_mode_change<
 
             // eager_label(); // 4.3ms
             // device.stream().sync().unwrap();
-            
+
             // println!("root_links: {root_links:?}");
             println!("labeling took {:?}, iters: {iters}", start.elapsed());
 
@@ -1341,7 +1343,7 @@ fn update_on_mode_change<
                 copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
             }
 
-            device.stream().sync().unwrap();           
+            device.stream().sync().unwrap();
         }
     }
 }
@@ -1381,14 +1383,19 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::{connected_comps::{
-    color_component_at_pixel, color_component_at_pixel_exact, copy_to_interleaved_buf,
-    copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, interleave_rgb, label_components,
-    label_components_far, label_components_master_label, label_components_shared,
-    label_components_shared_with_connections, label_components_shared_with_connections_and_links,
-    label_pixels, label_pixels_combinations, label_with_connection_info_more_32,
-    label_with_shared_links, read_pixel, CUDA_SOURCE_MORE32, globalize_links_horizontal, globalize_links_vertical,
-}, root_label::{classify_root_candidates, label_components_far_root, init_root_links}};
+use crate::{
+    connected_comps::{
+        color_component_at_pixel, color_component_at_pixel_exact, copy_to_interleaved_buf,
+        copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, globalize_links_horizontal,
+        globalize_links_vertical, interleave_rgb, label_components, label_components_far,
+        label_components_master_label, label_components_shared,
+        label_components_shared_with_connections,
+        label_components_shared_with_connections_and_links, label_pixels,
+        label_pixels_combinations, label_with_connection_info_more_32, label_with_shared_links,
+        read_pixel, CUDA_SOURCE_MORE32,
+    },
+    root_label::{classify_root_candidates, init_root_links, label_components_far_root, classify_root_candidates_shifting},
+};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 

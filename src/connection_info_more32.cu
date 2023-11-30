@@ -58,12 +58,11 @@ extern "C" {
         }
 
         unsigned int labelIdx = y * width + x;
-        unsigned int label = labelIdx + 1;
 
         sharedLinks[threadIdx.y][threadIdx.x] = currentLink;
         __syncthreads();
 
-        for (int i=0; i<6; i++) {
+        for (int i=0; i<5; i++) {
             if (threadIdx.x + currentLink.x < 32) {
                 // right
                 currentLink.x += sharedLinks[threadIdx.y][threadIdx.x + currentLink.x].x;
@@ -93,7 +92,7 @@ extern "C" {
         
         // links[labelIdx] = currentLink;
 
-        labels[labelIdx] = label;
+        labels[labelIdx] = labelIdx;
     }
 
     __global__ void setRootLabelIter(ushort4* links, unsigned int* labels, unsigned char* rootCandidates, int width, int height) {
@@ -299,7 +298,35 @@ extern "C" {
         labels[labelIdx] = label;
 
     }
+    
+    __global__ void classifyRootCandidatesShifting(unsigned int* input, ushort4* links, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
+        if (x >= width || y >= height) {
+            return;
+        }
+
+        int outIdx = y * width + x;
+        
+        unsigned int currentLabel = input[outIdx];
+        ushort4 currentLink = links[outIdx];
+
+
+        // unsigned int farRightLabel = input[outIdx + (int) currentLink.x];
+        // unsigned int farDownLabel = input[(y + currentLink.y) * width + x];
+
+        // if (farRightLabel > currentLabel || farDownLabel > currentLabel) {
+        //     printf("is not root candidate \n");
+        //     return;
+        // }
+        if (currentLink.x == 0 && currentLink.y == 0) {
+            unsigned int rootCandidateLabel = (1 << 31) | currentLabel;
+            input[outIdx] = rootCandidateLabel;
+            return;
+        }
+
+    }
     // could use bit shifting => store root bit in label
     __global__ void classifyRootCandidates(unsigned int* input, ushort4* links, unsigned char* rootCandidates, int width, int height) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -324,6 +351,7 @@ extern "C" {
             rootCandidates[outIdx] = 0;
             return;
         }
+        // could use bit shifting => store root bit in label
         rootCandidates[outIdx] = 1;
     }
 
@@ -333,7 +361,7 @@ extern "C" {
         }
     }
 
-    __global__ void labelComponentsFarRootCandidates(unsigned int* rootLinks, unsigned char* rootCandidates, unsigned int* input, unsigned int* out, ushort4* links, int width, int height, int* hasUpdated) {
+    __global__ void labelComponentsFarRootCandidates(/*unsigned int* rootLinks,*/ unsigned int* input, unsigned int* out, ushort4* links, int width, int height, int* hasUpdated) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -342,8 +370,13 @@ extern "C" {
         }
 
         int outIdx = y * width + x;
+
+        int mask = 0b01111111111111111111111111111111;
         
-        unsigned int currentLabel = input[outIdx];
+        unsigned int currentLabelRootCandidate = input[outIdx];
+        unsigned int is_root_candidate = currentLabelRootCandidate & ~mask;
+        // printf("%d", is_root_candidate);
+        unsigned int currentLabel = currentLabelRootCandidate & mask; 
 
         ushort4 currentLink = links[outIdx];
 
@@ -353,21 +386,21 @@ extern "C" {
         unsigned int farLeftIdx = outIdx - currentLink.z;
         unsigned int farUpIdx = (y - currentLink.w) * width + x;
         
-        unsigned int farDownLabel = input[farDownIdx];
+        unsigned int farDownLabel = input[farDownIdx] & mask;
 
         if (farDownLabel > currentLabel) {
             currentLabel = farDownLabel;
             *hasUpdated = 1;
-            out[outIdx] =  currentLabel;
+            out[outIdx] =  currentLabel | is_root_candidate;
 
             // if a larger label was found downwards, it is (probably) larger than the rest
             return;
         }
 
-        if (rootCandidates[currentLabel - 1]) {
+        if (input[currentLabel] >> 31) {
             // unsigned int rootLabel = input[currentLabel - 1];
             // if (rootLabel > currentLabel) {
-            currentLabel = input[currentLabel - 1];
+            currentLabel = input[currentLabel] & mask;
                 // *hasUpdated = 1;
 
                 // out[outIdx] = currentLabel;
@@ -410,44 +443,44 @@ extern "C" {
         //     }
         // }
 
-        unsigned int farRightLabel = input[farRightIdx];
+        unsigned int farRightLabel = input[farRightIdx] & mask;
 
         if (farRightLabel > currentLabel) {
             currentLabel = farRightLabel;
             *hasUpdated = 1;
-            out[outIdx] =  currentLabel;
+            out[outIdx] =  currentLabel | is_root_candidate;
             return;
         }
 
-        unsigned int farLeftLabel = input[farLeftIdx];
+        unsigned int farLeftLabel = input[farLeftIdx] & mask;
 
         if (farLeftLabel > currentLabel) {
             currentLabel = farLeftLabel;
             *hasUpdated = 1;
         }
         
-        unsigned int farUpLabel = input[farUpIdx];
+        unsigned int farUpLabel = input[farUpIdx] & mask;
 
         if (farUpLabel > currentLabel) {
             currentLabel = farUpLabel;
             *hasUpdated = 1;
         }
         
-        int leftLabel = input[outIdx - min(1, currentLink.z)];
+        int leftLabel = input[outIdx - min(1, currentLink.z)] & mask;
 
         if (leftLabel > currentLabel) {
             currentLabel = leftLabel;
             *hasUpdated = 1;
         }
   
-        int upLabel = input[(y - min(1, currentLink.w)) * width + x];
+        int upLabel = input[(y - min(1, currentLink.w)) * width + x] & mask;
 
         if (upLabel > currentLabel) {
             currentLabel = upLabel;
             *hasUpdated = 1;
         }
  
-        out[outIdx] = currentLabel;
+        out[outIdx] = currentLabel | is_root_candidate;
     }
     __global__ void labelComponentsFar(unsigned int* input, unsigned int* out, ushort4* links, int width, int height, int* hasUpdated) {
         // return;

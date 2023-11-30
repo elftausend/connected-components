@@ -4,7 +4,7 @@ use custos::{
     cuda::{fn_cache, CUDAPtr},
     flag::AllocFlag,
     prelude::CUBuffer,
-    CUDA, Buffer,
+    Buffer, CUDA,
 };
 
 use crate::check_error;
