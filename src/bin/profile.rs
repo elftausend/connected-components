@@ -1,11 +1,12 @@
-use std::time::Instant;
+use std::{time::Instant, ptr::null_mut};
 
 use clap::Parser;
 use connected_components::{
     decode_raw_jpeg, globalize_links_horizontal, globalize_links_vertical, label_with_shared_links,
     root_label::{classify_root_candidates_shifting, label_components_far_root},
-    Args,
+    Args, check_error,
 };
+use cuda_driver_sys::{cuEventCreate, CUevent, cuEventRecord, cuEventDestroy_v2, cuEventElapsedTime, cuEventSynchronize};
 use custos::{cuda::CUDAPtr, static_api::static_cuda, ShallowCopy, CUDA};
 
 fn converge(
@@ -17,7 +18,18 @@ fn converge(
 ) -> usize {
     let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
     let mut iters = 0;
+
+    let mut event1: CUevent = null_mut();
+    unsafe { cuEventCreate(&mut event1, 0) };
+    
+    let mut event2: CUevent = null_mut();
+    unsafe { cuEventCreate(&mut event2, 0) };
+
+    let mut total_duration = 0.;
+
     loop {
+        unsafe { cuEventRecord(event1, device.stream().0 as *mut _) };
+        unsafe { cuEventSynchronize(event1)};
         label_components_far_root(
             device,
             labels,
@@ -28,6 +40,12 @@ fn converge(
             &mut has_updated,
         )
         .unwrap();
+        unsafe { cuEventRecord(event2, device.stream().0 as *mut _) };
+        unsafe { cuEventSynchronize(event2)};
+
+        let mut iter_elapsed: f32 = 0.;
+        check_error((unsafe { cuEventElapsedTime(&mut iter_elapsed, event1, event2)} as u32), "could not measure time");
+        total_duration += iter_elapsed;
 
         iters += 1;
         if has_updated.read()[0] == 0 {
@@ -36,10 +54,16 @@ fn converge(
 
         has_updated.clear();
     }
+
+    println!("total duration: {total_duration:?}ms");
+
+    unsafe {cuEventDestroy_v2(event1)};
+    unsafe {cuEventDestroy_v2(event2)};
+
     iters
 }
 
-// fn setup(labels: &mut CUDAPtr<u32>, links: &mut CUDAPtr<u16>, channels: &[Buffer<u8, CUDA>; 3], width: usize,height: usize) { 
+// fn setup(labels: &mut CUDAPtr<u32>, links: &mut CUDAPtr<u16>, channels: &[Buffer<u8, CUDA>; 3], width: usize,height: usize) {
 //     label_with_shared_links(
 //         labels,
 //         links,
@@ -65,39 +89,40 @@ fn main() {
     let width = width as usize;
     let height = height as usize;
 
-    let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
+    for _ in 0..2 {
+        let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
 
-    // constant memory afterwards?
-    let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
+        // constant memory afterwards?
+        let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
 
-    // let setup_dur = Instant::now();
-    device.stream().sync().unwrap();
+        // let setup_dur = Instant::now();
+        device.stream().sync().unwrap();
 
-    label_with_shared_links(
-        &mut labels,
-        &mut links,
-        &channels[0],
-        &channels[1],
-        &channels[2],
-        width,
-        height,
-    );
+        label_with_shared_links(
+            &mut labels,
+            &mut links,
+            &channels[0],
+            &channels[1],
+            &channels[2],
+            width,
+            height,
+        );
 
-    globalize_links_horizontal(&mut links, width, height);
-    globalize_links_vertical(&mut links, width, height);
+        globalize_links_horizontal(&mut links, width, height);
+        globalize_links_vertical(&mut links, width, height);
 
-    classify_root_candidates_shifting(device, &labels, &links, width, height).unwrap();
+        classify_root_candidates_shifting(device, &labels, &links, width, height).unwrap();
 
-    device.stream().sync().unwrap();
-    let converge_start = Instant::now();
+        device.stream().sync().unwrap();
+        let converge_start = Instant::now();
 
-    let iters = converge(device, &labels, &links, width, height);
+        let iters = converge(device, &labels, &links, width, height);
 
-    device.stream().sync().unwrap();
+        device.stream().sync().unwrap();
 
-    println!(
-        "converge duration: {:?}, iters: {iters:?}",
-        converge_start.elapsed()
-    );
-
+        println!(
+            "converge duration: {:?}, iters: {iters:?}",
+            converge_start.elapsed()
+        );
+    }
 }
