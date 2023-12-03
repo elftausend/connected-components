@@ -1,42 +1,21 @@
-mod connected_comps;
-// mod jpeg_decoder;
-mod root_label;
-mod utils;
+use std::{mem::size_of, ptr::null, time::Instant};
 
-use std::{
-    mem::{size_of, ManuallyDrop},
-    ptr::{null, null_mut},
-    time::Instant,
+use clap::Parser;
+use connected_components::{
+    check_error, connected_comps::label_with_connection_info, decode_raw_jpeg, jpeg_decoder, Args,
 };
-
-use clap::{arg, command, Parser};
-use connected_comps::{label_components_rowed, label_pixels_rowed, label_with_connection_info};
 use custos::{
     cuda::{
-        api::{cuStreamBeginCapture, CUStreamCaptureMode, CUstream, Graph},
-        fn_cache,
+        api::{cuStreamBeginCapture, CUStreamCaptureMode, CUstream},
         lazy::LazyCudaGraph,
         CUDAPtr,
     },
     flag::AllocFlag,
-    prelude::CUBuffer,
     static_api::static_cuda,
-    Base, ClearBuf, Device, Lazy, OnDropBuffer, OnNewBuffer, CUDA,
+    ClearBuf, Device, OnDropBuffer, OnNewBuffer, CUDA,
 };
 use glow::*;
 use glutin::event::VirtualKeyCode;
-use nvjpeg_sys::{
-    check, nvjpegChromaSubsampling_t, nvjpegCreateSimple, nvjpegDecode, nvjpegDestroy,
-    nvjpegGetImageInfo, nvjpegHandle_t, nvjpegImage_t, nvjpegJpegStateCreate,
-    nvjpegJpegStateDestroy, nvjpegJpegState_t, nvjpegOutputFormat_t_NVJPEG_OUTPUT_RGB,
-};
-
-#[track_caller]
-pub fn check_error(value: u32, msg: &str) {
-    if value != 0 {
-        panic!("Error: {value} with message: {msg}")
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -79,90 +58,6 @@ impl From<u8> for Mode {
     }
 }
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-pub struct Args {
-    #[arg(short, long, default_value = "./maze.jpg")]
-    image_path: String,
-}
-
-unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>>>(
-    raw_data: &[u8],
-    device: &'a CUDA<Mods>,
-) -> Result<
-    ([custos::Buffer<'a, u8, CUDA<Mods>>; 3], i32, i32),
-    Box<dyn std::error::Error + Send + Sync>,
-> {
-    let mut handle: nvjpegHandle_t = null_mut();
-
-    let status = nvjpegCreateSimple(&mut handle);
-    check!(status, "Could not create simple handle. ");
-
-    let mut jpeg_state: nvjpegJpegState_t = null_mut();
-    let status = nvjpegJpegStateCreate(handle, &mut jpeg_state);
-    check!(status, "Could not create jpeg state. ");
-
-    let mut n_components = 0;
-    let mut subsampling: nvjpegChromaSubsampling_t = 0;
-    let mut widths = [0, 0, 0];
-    let mut heights = [0, 0, 0];
-
-    let status = nvjpegGetImageInfo(
-        handle,
-        raw_data.as_ptr(),
-        raw_data.len(),
-        &mut n_components,
-        &mut subsampling,
-        widths.as_mut_ptr(),
-        heights.as_mut_ptr(),
-    );
-    check!(status, "Could not get image info. ");
-
-    heights[0] = heights[1] * 2;
-    heights[0] = 3000;
-
-    println!("n_components: {n_components}, subsampling: {subsampling}, widths: {widths:?}, heights: {heights:?}");
-
-    let mut image: nvjpegImage_t = nvjpegImage_t::new();
-
-    image.pitch[0] = widths[0] as usize;
-    image.pitch[1] = widths[0] as usize;
-    image.pitch[2] = widths[0] as usize;
-
-    let channel0 = custos::Buffer::<u8, _>::new(device, image.pitch[0] * heights[0] as usize);
-    let channel1 = custos::Buffer::<u8, _>::new(device, image.pitch[0] * heights[0] as usize);
-    let channel2 = custos::Buffer::<u8, _>::new(device, image.pitch[0] * heights[0] as usize);
-
-    image.channel[0] = channel0.cu_ptr() as *mut _;
-    image.channel[1] = channel1.cu_ptr() as *mut _;
-    image.channel[2] = channel2.cu_ptr() as *mut _;
-
-    let status = nvjpegDecode(
-        handle,
-        jpeg_state,
-        raw_data.as_ptr(),
-        raw_data.len(),
-        nvjpegOutputFormat_t_NVJPEG_OUTPUT_RGB,
-        &mut image,
-        device.mem_transfer_stream.0 as *mut _,
-        // null_mut(),
-    );
-    device.mem_transfer_stream.sync().unwrap();
-    check!(status, "Could not decode image. ");
-
-    //device.stream().sync()?;
-
-    // free
-
-    let status = nvjpegJpegStateDestroy(jpeg_state);
-    check!(status, "Could not free jpeg state. ");
-
-    let status = nvjpegDestroy(handle);
-    check!(status, "Could not free nvjpeg handle. ");
-
-    Ok(([channel0, channel1, channel2], widths[0], heights[0]))
-}
-
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let device = &*Box::leak(Box::new(CUDA::new(0).unwrap()));
     // print current directory at start
@@ -173,7 +68,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         // let mut decoder = jpeg_decoder::JpegDecoder::new().unwrap();
 
         let raw_data = std::fs::read(args.image_path).unwrap();
-        let (channels, width, height) = decode_raw_jpeg(&raw_data, device).unwrap();
+
+        let (channels, width, height) = decode_raw_jpeg(&raw_data, device, Some(3000)).unwrap();
 
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();
@@ -1231,8 +1127,7 @@ fn update_on_mode_change<'a, Mods>(
 
             device.stream().sync().unwrap();
 
-            classify_root_candidates_shifting(device, &labels, &links, width, height)
-                .unwrap();
+            classify_root_candidates_shifting(device, &labels, &links, width, height).unwrap();
 
             // println!("root candidates: {root_candidates:?}");
 
@@ -1350,10 +1245,10 @@ fn update_on_mode_change<'a, Mods>(
 
 #[test]
 fn test_cross_bufs() {
-    let device = CUDA::<Base>::new(0).unwrap();
+    let device = CUDA::<custos::Base>::new(0).unwrap();
     let mut buf = device.buffer([1, 2, 3, 4, 5]);
 
-    let device2 = CUDA::<Base>::new(0).unwrap();
+    let device2 = CUDA::<custos::Base>::new(0).unwrap();
     device2.clear(&mut buf);
     assert_eq!(buf.read(), [0; 5])
 }
@@ -1383,18 +1278,34 @@ pub enum CUresourcetype_enum {
     CU_RESOURCE_TYPE_LINEAR = 2,
     CU_RESOURCE_TYPE_PITCH2D = 3,
 }
-use crate::{
-    connected_comps::{
-        color_component_at_pixel, color_component_at_pixel_exact, copy_to_interleaved_buf,
-        copy_to_surface, copy_to_surface_unsigned, fill_cuda_surface, globalize_links_horizontal,
-        globalize_links_vertical, interleave_rgb, label_components, label_components_far,
-        label_components_master_label, label_components_shared,
-        label_components_shared_with_connections,
-        label_components_shared_with_connections_and_links, label_pixels,
-        label_pixels_combinations, label_with_connection_info_more_32, label_with_shared_links,
-        read_pixel, CUDA_SOURCE_MORE32,
+use connected_components::{
+    // connected_comps::{
+    color_component_at_pixel,
+    color_component_at_pixel_exact,
+    copy_to_interleaved_buf,
+    copy_to_surface,
+    copy_to_surface_unsigned,
+    fill_cuda_surface,
+    globalize_links_horizontal,
+    globalize_links_vertical,
+    interleave_rgb,
+    label_components,
+    label_components_far,
+    label_components_master_label,
+    label_components_shared,
+    label_components_shared_with_connections,
+    label_components_shared_with_connections_and_links,
+    label_pixels,
+    label_pixels_combinations,
+    label_with_connection_info_more_32,
+    label_with_shared_links,
+    read_pixel,
+    // },
+    root_label::{
+        classify_root_candidates, classify_root_candidates_shifting, init_root_links,
+        label_components_far_root,
     },
-    root_label::{classify_root_candidates, init_root_links, label_components_far_root, classify_root_candidates_shifting},
+    CUDA_SOURCE_MORE32,
 };
 
 pub use self::CUresourcetype_enum as CUresourcetype;

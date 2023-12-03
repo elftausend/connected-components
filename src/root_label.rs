@@ -45,7 +45,6 @@ pub fn classify_root_candidates_shifting<Mods: OnDropBuffer>(
     )
 }
 
-
 pub fn label_components_far_root<Mods: OnDropBuffer>(
     device: &CUDA<Mods>,
     // root_links: &mut CUDAPtr<u32>,

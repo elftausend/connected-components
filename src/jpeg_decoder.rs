@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use custos::{buf, prelude::CUBuffer, static_api::static_cuda, CUDA};
+use custos::{buf, prelude::CUBuffer, static_api::static_cuda, Buffer, CUDA};
 use nvjpeg_sys::{
     check, nvjpegCreateSimple, nvjpegDecode, nvjpegHandle_t, nvjpegImage_t, nvjpegJpegStateCreate,
     nvjpegJpegState_t, nvjpegOutputFormat_t_NVJPEG_OUTPUT_RGB,
@@ -12,8 +12,8 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub struct JpegDecoder {
     pub handle: nvjpegHandle_t,
     pub jpeg_state: nvjpegJpegState_t,
-    pub channels: Option<[CUBuffer<'static, u8>; 3]>,
-    pub channel: Option<CUBuffer<'static, u8>>,
+    pub channels: Option<[Buffer<'static, u8, CUDA>; 3]>,
+    pub channel: Option<Buffer<'static, u8, CUDA>>,
     pub width: usize,
     pub height: usize,
     pub image: nvjpegImage_t,
@@ -91,7 +91,7 @@ impl JpegDecoder {
             nvjpegOutputFormat_t_NVJPEG_OUTPUT_RGB,
             &mut self.image,
             // static_cuda().stream().0 as *mut _,
-            null_mut()
+            null_mut(),
         );
         check!(status, "Could not decode image. ");
         Ok(())
