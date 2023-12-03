@@ -3,7 +3,7 @@ use custos::{
     OnDropBuffer, CUDA,
 };
 
-use crate::connected_comps::CUDA_SOURCE_MORE32;
+use crate::{connected_comps::CUDA_SOURCE_MORE32, DEC_CCL};
 
 pub fn classify_root_candidates<Mods: OnDropBuffer>(
     device: &CUDA<Mods>,
@@ -39,7 +39,7 @@ pub fn classify_root_candidates_shifting<Mods: OnDropBuffer>(
         [width as u32 / 32 + 1, height as u32 / 32 + 1, 1],
         [32, 32, 1],
         0,
-        CUDA_SOURCE_MORE32,
+        DEC_CCL,
         "classifyRootCandidatesShifting",
         &[input, links, &width, &height],
     )
@@ -64,7 +64,7 @@ pub fn label_components_far_root<Mods: OnDropBuffer>(
         // [64, 34, 1],
         // [32, 32, 1],
         0,
-        CUDA_SOURCE_MORE32,
+        DEC_CCL,
         "labelComponentsFarRootCandidates",
         &[
             // root_links,

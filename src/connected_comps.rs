@@ -6,6 +6,7 @@ use custos::{
 
 const CUDA_SOURCE: &str = include_str!("./connected_comps.cu");
 pub const CUDA_SOURCE_MORE32: &str = include_str!("./connection_info_more32.cu");
+pub const DEC_CCL: &str = include_str!("./dec_connected_components.cu");
 
 pub fn fill_cuda_surface<Mods: OnDropBuffer>(
     to_fill: &mut custos::Buffer<u8, CUDA<Mods>>,
@@ -134,7 +135,7 @@ pub fn label_with_shared_links<Mods: OnDropBuffer>(
         [128, 256, 1],
         [32, 32, 1],
         0,
-        CUDA_SOURCE_MORE32,
+        DEC_CCL,
         "labelWithSharedLinks",
         &[target, links, red, green, blue, &width, &height],
     )
@@ -153,7 +154,7 @@ pub fn globalize_links_vertical<Mods: OnDropBuffer>(
             [256, 1, 1],
             [32, 32, 1],
             0,
-            CUDA_SOURCE_MORE32,
+            DEC_CCL,
             "globalizeLinksVertical",
             &[links, &active_y, &(max_y - active_y), &width, &height],
         )
@@ -173,7 +174,7 @@ pub fn globalize_links_horizontal<Mods: OnDropBuffer>(
             [1, 256, 1],
             [32, 32, 1],
             0,
-            CUDA_SOURCE_MORE32,
+            DEC_CCL,
             "globalizeLinksHorizontal",
             &[links, &active_x, &(max_x - active_x), &width, &height],
         )

@@ -6,7 +6,7 @@ use connected_components::{
     root_label::{classify_root_candidates_shifting, label_components_far_root},
     Args,
 };
-use custos::{cuda::CUDAPtr, static_api::static_cuda, ShallowCopy, CUDA, Buffer};
+use custos::{cuda::CUDAPtr, static_api::static_cuda, ShallowCopy, CUDA};
 
 fn converge(
     device: &CUDA,
@@ -99,4 +99,5 @@ fn main() {
         "converge duration: {:?}, iters: {iters:?}",
         converge_start.elapsed()
     );
+
 }
