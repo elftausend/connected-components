@@ -1,6 +1,5 @@
 extern "C" {
-
-    __global__ void labelWithSharedLinks(unsigned int* labels, ushort4* links, unsigned char* R,unsigned char* G,unsigned char* B, int width, int height) {
+    __global__ void labelWithSingleLinks(unsigned int* labels, ushort4* links, unsigned char* R,unsigned char* G,unsigned char* B, int width, int height) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
         if (x >= width || y >= height) {
@@ -8,10 +7,7 @@ extern "C" {
         } 
         int threshold = 20;
         
-        unsigned int connections = 0;
-
         uchar4 currentPixel = make_uchar4(R[y * width + x], G[y * width + x], B[y * width + x], 255);
-
         
         __shared__ ushort4 sharedLinks[32][33];
         ushort4 currentLink = make_ushort4(0, 0, 0, 0);
@@ -23,7 +19,6 @@ extern "C" {
              
             if (abs(rightPixel.x - currentPixel.x) < threshold && abs(rightPixel.y - currentPixel.y) < threshold && abs(rightPixel.z - currentPixel.z) < threshold) {    
                 currentLink.x = 1;
-                connections |= (1u << 31); 
             }
         }
         // left
@@ -33,7 +28,6 @@ extern "C" {
 
           if (abs(leftPixel.x - currentPixel.x) < threshold && abs(leftPixel.y - currentPixel.y) < threshold && abs(leftPixel.z - currentPixel.z) < threshold) {    
                 currentLink.z = 1;
-                connections |= (1u << 30); 
             }
         }
 
@@ -44,7 +38,6 @@ extern "C" {
 
             if (abs(downPixel.x - currentPixel.x) < threshold && abs(downPixel.y - currentPixel.y) < threshold && abs(downPixel.z - currentPixel.z) < threshold) {    
                 currentLink.y = 1;
-                connections |= (1u << 29); 
             }
         }
         if (y > 0) { 
@@ -54,7 +47,129 @@ extern "C" {
 
             if (abs(upPixel.x - currentPixel.x) < threshold && abs(upPixel.y - currentPixel.y) < threshold && abs(upPixel.z - currentPixel.z) < threshold) {    
                 currentLink.w = 1;
-                connections |= (1u << 28);
+            }
+        }
+
+        unsigned int labelIdx = y * width + x;
+        labels[labelIdx] = labelIdx;
+        links[labelIdx] = currentLink;
+    }
+
+    __global__ void globalizeSingleLinkHorizontal(ushort4* links, int width, int height) {
+        unsigned int c = threadIdx.x;
+        unsigned int r = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (c >= width || r >= height) {
+            return;
+        }
+
+        __shared__ ushort4 sharedLinks[1024];
+
+        ushort4 currentLink = links[r * width + c];
+
+        sharedLinks[threadIdx.x] = currentLink;
+        __syncthreads();
+
+        for (int i=0; i<10; i++) {
+            if (threadIdx.x + currentLink.x < 1024) {
+                // right
+                currentLink.x += sharedLinks[threadIdx.x + currentLink.x].x;
+            }
+
+    
+            if ((int)threadIdx.x - (int)currentLink.z >= 0) {
+                // left
+                currentLink.z += sharedLinks[threadIdx.x - currentLink.z].z;
+            }
+
+            sharedLinks[threadIdx.x] = currentLink;
+            __syncthreads();
+        }
+
+        links[r * width + c] = sharedLinks[threadIdx.x];
+    }
+
+    __global__ void globalizeSingleLinkVertical(ushort4* links, int width, int height) {
+        unsigned int c = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int r = threadIdx.y;
+
+        if (c >= width || r >= height) {
+            return;
+        }
+
+        __shared__ ushort4 sharedLinks[1024];
+
+        ushort4 currentLink = links[r * width + c];
+
+        sharedLinks[threadIdx.y] = currentLink;
+        __syncthreads();
+
+        for (int i=0; i<10; i++) {
+            if (threadIdx.y + currentLink.y < 1024) {
+                // down
+                currentLink.y += sharedLinks[threadIdx.y + currentLink.y].y;
+            }
+
+            if ((int)threadIdx.y - (int)currentLink.w >= 0) {
+                // up
+                currentLink.w += sharedLinks[threadIdx.y - currentLink.w].w;
+            }
+
+            sharedLinks[threadIdx.y] = currentLink;
+            __syncthreads();
+        }
+
+        links[r * width + c] = sharedLinks[threadIdx.y];
+    }
+
+    __global__ void labelWithSharedLinks(unsigned int* labels, ushort4* links, unsigned char* R,unsigned char* G,unsigned char* B, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+        if (x >= width || y >= height) {
+            return;
+        } 
+        int threshold = 20;
+        
+        uchar4 currentPixel = make_uchar4(R[y * width + x], G[y * width + x], B[y * width + x], 255);
+        
+        __shared__ ushort4 sharedLinks[32][33];
+        ushort4 currentLink = make_ushort4(0, 0, 0, 0);
+        
+        // right 
+        if (x < width-1) {
+            uchar4 rightPixel = make_uchar4(R[y * width + x +1], G[y * width + x +1], B[y * width + x+1], 255);
+            // uchar4 rightPixel = img[y * width + x + 1];
+             
+            if (abs(rightPixel.x - currentPixel.x) < threshold && abs(rightPixel.y - currentPixel.y) < threshold && abs(rightPixel.z - currentPixel.z) < threshold) {    
+                currentLink.x = 1;
+            }
+        }
+        // left
+        if (x > 0) {
+            uchar4 leftPixel = make_uchar4(R[y * width + x -1], G[y * width + x -1], B[y * width + x-1], 255); 
+            // uchar4 leftPixel = img[y * width + x - 1];
+
+          if (abs(leftPixel.x - currentPixel.x) < threshold && abs(leftPixel.y - currentPixel.y) < threshold && abs(leftPixel.z - currentPixel.z) < threshold) {    
+                currentLink.z = 1;
+            }
+        }
+
+        if (y < height -1) { 
+            // down 
+            uchar4 downPixel = make_uchar4(R[(y+1) * width + x ], G[(y +1) * width + x], B[(y+ 1) * width + x], 255);
+            // uchar4 downPixel = img[(y + 1) * width + x];
+
+            if (abs(downPixel.x - currentPixel.x) < threshold && abs(downPixel.y - currentPixel.y) < threshold && abs(downPixel.z - currentPixel.z) < threshold) {    
+                currentLink.y = 1;
+            }
+        }
+        if (y > 0) { 
+            // up
+            uchar4 upPixel = make_uchar4(R[(y-1) * width + x ], G[(y -1) * width + x], B[(y- 1) * width + x], 255);
+            // uchar4 upPixel = img[(y - 1) * width + x];
+
+            if (abs(upPixel.x - currentPixel.x) < threshold && abs(upPixel.y - currentPixel.y) < threshold && abs(upPixel.z - currentPixel.z) < threshold) {    
+                currentLink.w = 1;
             }
         }
 
@@ -226,7 +341,7 @@ extern "C" {
 
             // }
         }
-        
+
         unsigned int farRightLabel = input[farRightIdx] & mask;
 
         if (farRightLabel > currentLabel) {

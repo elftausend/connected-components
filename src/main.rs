@@ -2,7 +2,8 @@ use std::{mem::size_of, ptr::null, time::Instant};
 
 use clap::Parser;
 use connected_components::{
-    check_error, connected_comps::label_with_connection_info, decode_raw_jpeg, jpeg_decoder, Args,
+    check_error, connected_comps::label_with_connection_info, decode_raw_jpeg,
+    globalize_single_link_horizontal, jpeg_decoder, label_with_single_links, Args, globalize_single_link_vertical,
 };
 use custos::{
     cuda::{
@@ -26,6 +27,7 @@ enum Mode {
     ConnectionInfoWide,
     ConnectionInfo32x32,
     RootLabel,
+    M2048,
 }
 
 impl Mode {
@@ -34,7 +36,8 @@ impl Mode {
             Mode::None => Mode::Labels,
             Mode::Labels => Mode::MouseHighlight,
             Mode::MouseHighlight => Mode::RowWise,
-            Mode::RowWise => Mode::RootLabel,
+            Mode::RowWise => Mode::M2048,
+            Mode::M2048 => Mode::RootLabel,
             Mode::RootLabel => Mode::ConnectionInfoWide,
             Mode::ConnectionInfoWide => Mode::ConnectionInfo32x32,
             Mode::ConnectionInfo32x32 => Mode::None,
@@ -50,6 +53,7 @@ impl From<u8> for Mode {
             1 => Mode::Labels,
             2 => Mode::MouseHighlight,
             3 => Mode::RowWise,
+            5 => Mode::M2048,
             6 => Mode::RootLabel,
             7 => Mode::ConnectionInfoWide,
             8 => Mode::ConnectionInfo32x32,
@@ -1219,6 +1223,97 @@ fn update_on_mode_change<'a, Mods>(
                 }
             };
 
+            // eager_label(); // 4.3ms
+            // device.stream().sync().unwrap();
+
+            // println!("root_links: {root_links:?}");
+            println!("labeling took {:?}, iters: {iters}", start.elapsed());
+
+            // copy_to_surface(&labels, surface, width, height);
+            if ping {
+                *colorless_updated_labels = labels.clone();
+                copy_to_surface_unsigned(&labels, surface, width, height);
+                // println!("labels: {:?}", labels.read());
+                copy_to_interleaved_buf(&labels, updated_labels, width, height);
+            } else {
+                *colorless_updated_labels = pong_updated_labels.clone();
+                // println!("labels: {:?}", pong_updated_labels.read());
+                copy_to_surface_unsigned(&pong_updated_labels, surface, width, height);
+                copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
+            }
+
+            device.stream().sync().unwrap();
+        }
+        Mode::M2048 => {
+            println!("connection info");
+
+            let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
+
+            // constant memory afterwards?
+            let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
+
+            let setup_dur = Instant::now();
+
+            label_with_single_links(
+                &mut labels,
+                &mut links,
+                &channels[0],
+                &channels[1],
+                &channels[2],
+                width,
+                height,
+            );
+
+            globalize_single_link_horizontal(device, &links, width, height);
+            globalize_single_link_vertical(device, &links, width, height);
+
+            // globalize_links_horizontal(&mut links, width, height);
+            // globalize_links_vertical(&mut links, width, height);
+
+            // println!("links: {links:?}");
+            device.stream().sync().unwrap();
+
+            classify_root_candidates_shifting(device, &labels, &links, width, height).unwrap();
+
+            device.stream().sync().unwrap();
+            println!("setup dur: {:?}", setup_dur.elapsed());
+            // println!("links: {links:?}");
+            // return;
+            let mut pong_updated_labels = labels.clone();
+            *colorless_updated_labels = labels.clone();
+            device.stream().sync().unwrap();
+
+            let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
+
+            let start = Instant::now();
+
+            let mut ping = true;
+            let mut iters = 0;
+
+            let mut no_ping_pong = || {
+                loop {
+                    label_components_far_root(
+                        &device,
+                        &labels,
+                        &mut *unsafe { labels.shallow() },
+                        &links,
+                        width,
+                        height,
+                        &mut has_updated,
+                    )
+                    .unwrap();
+
+                    // device.stream().sync().unwrap();
+                    iters += 1;
+                    if has_updated.read()[0] == 0 {
+                        break;
+                    }
+
+                    has_updated.clear();
+                }
+            };
+
+            no_ping_pong();
             // eager_label(); // 4.3ms
             // device.stream().sync().unwrap();
 

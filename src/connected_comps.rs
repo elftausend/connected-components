@@ -1,5 +1,5 @@
 use custos::{
-    cuda::{launch_kernel, CUDAPtr},
+    cuda::{launch_kernel, CUDAPtr, CudaDevice},
     prelude::CUBuffer,
     OnDropBuffer, OnNewBuffer, CUDA,
 };
@@ -140,6 +140,63 @@ pub fn label_with_shared_links<Mods: OnDropBuffer>(
         &[target, links, red, green, blue, &width, &height],
     )
     .unwrap()
+}
+
+pub fn label_with_single_links<Mods: OnDropBuffer>(
+    target: &mut custos::Buffer<u32, CUDA<Mods>>,
+    links: &mut custos::Buffer<u16, CUDA<Mods>>,
+    red: &custos::Buffer<u8, CUDA<Mods>>,
+    green: &custos::Buffer<u8, CUDA<Mods>>,
+    blue: &custos::Buffer<u8, CUDA<Mods>>,
+    width: usize,
+    height: usize,
+) {
+    launch_kernel(
+        target.device(),
+        [128, 256, 1],
+        [32, 32, 1],
+        0,
+        DEC_CCL,
+        "labelWithSingleLinks",
+        &[target, links, red, green, blue, &width, &height],
+    )
+    .unwrap()
+}
+
+pub fn globalize_single_link_horizontal(
+    device: &CudaDevice,
+    links: &CUDAPtr<u16>,
+    width: usize,
+    height: usize,
+) {
+    launch_kernel(
+        device,
+        [1, 2048, 1],
+        [1024, 1, 1],
+        0,
+        DEC_CCL,
+        "globalizeSingleLinkHorizontal",
+        &[links, &width, &height],
+    )
+    .unwrap();
+}
+
+pub fn globalize_single_link_vertical(
+    device: &CudaDevice,
+    links: &CUDAPtr<u16>,
+    width: usize,
+    height: usize,
+) {
+    launch_kernel(
+        device,
+        [2048, 1, 1],
+        [1, 1024, 1],
+        0,
+        DEC_CCL,
+        "globalizeSingleLinkVertical",
+        &[links, &width, &height],
+    )
+    .unwrap();
 }
 
 pub fn globalize_links_vertical<Mods: OnDropBuffer>(

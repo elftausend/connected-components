@@ -1,12 +1,16 @@
-use std::{time::Instant, ptr::null_mut};
+use std::{ptr::null_mut, time::Instant};
 
 use clap::Parser;
 use connected_components::{
-    decode_raw_jpeg, globalize_links_horizontal, globalize_links_vertical, label_with_shared_links,
+    check_error, decode_raw_jpeg, globalize_links_horizontal, globalize_links_vertical,
+    label_with_shared_links,
     root_label::{classify_root_candidates_shifting, label_components_far_root},
-    Args, check_error,
+    Args,
 };
-use cuda_driver_sys::{cuEventCreate, CUevent, cuEventRecord, cuEventDestroy_v2, cuEventElapsedTime, cuEventSynchronize};
+use cuda_driver_sys::{
+    cuEventCreate, cuEventDestroy_v2, cuEventElapsedTime, cuEventRecord, cuEventSynchronize,
+    CUevent,
+};
 use custos::{cuda::CUDAPtr, static_api::static_cuda, ShallowCopy, CUDA};
 
 fn converge(
@@ -21,7 +25,7 @@ fn converge(
 
     let mut event1: CUevent = null_mut();
     unsafe { cuEventCreate(&mut event1, 0) };
-    
+
     let mut event2: CUevent = null_mut();
     unsafe { cuEventCreate(&mut event2, 0) };
 
@@ -29,7 +33,7 @@ fn converge(
 
     loop {
         unsafe { cuEventRecord(event1, device.stream().0 as *mut _) };
-        unsafe { cuEventSynchronize(event1)};
+        // unsafe { cuEventSynchronize(event1)};
         label_components_far_root(
             device,
             labels,
@@ -41,10 +45,13 @@ fn converge(
         )
         .unwrap();
         unsafe { cuEventRecord(event2, device.stream().0 as *mut _) };
-        unsafe { cuEventSynchronize(event2)};
+        unsafe { cuEventSynchronize(event2) };
 
         let mut iter_elapsed: f32 = 0.;
-        check_error((unsafe { cuEventElapsedTime(&mut iter_elapsed, event1, event2)} as u32), "could not measure time");
+        check_error(
+            (unsafe { cuEventElapsedTime(&mut iter_elapsed, event1, event2) } as u32),
+            "could not measure time",
+        );
         total_duration += iter_elapsed;
 
         iters += 1;
@@ -57,8 +64,8 @@ fn converge(
 
     println!("total duration: {total_duration:?}ms");
 
-    unsafe {cuEventDestroy_v2(event1)};
-    unsafe {cuEventDestroy_v2(event2)};
+    unsafe { cuEventDestroy_v2(event1) };
+    unsafe { cuEventDestroy_v2(event2) };
 
     iters
 }
