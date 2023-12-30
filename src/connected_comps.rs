@@ -171,7 +171,7 @@ pub fn globalize_single_link_horizontal(
 ) {
     launch_kernel(
         device,
-        [2, 2048, 1],
+        [1, 2048, 1],
         [1024, 1, 1],
         0,
         DEC_CCL,
@@ -189,7 +189,7 @@ pub fn globalize_single_link_vertical(
 ) {
     launch_kernel(
         device,
-        [2048, 2, 1],
+        [2048, 1, 1],
         [1, 1024, 1],
         0,
         DEC_CCL,

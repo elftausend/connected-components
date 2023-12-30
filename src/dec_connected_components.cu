@@ -60,22 +60,39 @@ extern "C" {
     }
 
     __global__ void globalizeSingleLinkHorizontal(ushort4* links, int width, int height) {
-        unsigned int c = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int c =threadIdx.x;
         unsigned int r = blockIdx.y * blockDim.y + threadIdx.y;
 
         if (c >= width || r >= height) {
             return;
         }
 
-        __shared__ ushort4 sharedLinks[1024];
+        __shared__ ushort4 sharedLinks[2048];
 
         ushort4 currentLink = links[r * width + c];
+        ushort4 currentBorderLink;
 
         sharedLinks[threadIdx.x] = currentLink;
+
+        bool underBorder = threadIdx.x + 1024 < width;
+        if (underBorder) {
+            currentBorderLink = links[r * width + c + 1024];
+            sharedLinks[threadIdx.x + 1024] = currentBorderLink;
+        }
+
         __syncthreads();
 
-        for (int i=0; i<10; i++) {
-            if (threadIdx.x + currentLink.x < 1024) {
+        for (int i=0; i<6; i++) {
+            if (underBorder && (threadIdx.x + currentBorderLink.x + 1024) < 2048) {
+                currentBorderLink.x += sharedLinks[threadIdx.x + 1024 + currentBorderLink.x].x;
+            }
+            if (underBorder) {
+                sharedLinks[threadIdx.x + 1024] = currentBorderLink;
+                __syncthreads();
+            }
+
+
+            if (threadIdx.x + currentLink.x < width) {
                 // right
                 currentLink.x += sharedLinks[threadIdx.x + currentLink.x].x;
             }
@@ -94,21 +111,37 @@ extern "C" {
 
     __global__ void globalizeSingleLinkVertical(ushort4* links, int width, int height) {
         unsigned int c = blockIdx.x * blockDim.x + threadIdx.x;
-        unsigned int r = blockIdx.y * blockDim.y + threadIdx.y;
+        unsigned int r = threadIdx.y;
 
         if (c >= width || r >= height) {
             return;
         }
 
-        __shared__ ushort4 sharedLinks[1024];
+        __shared__ ushort4 sharedLinks[2048];
 
         ushort4 currentLink = links[r * width + c];
+        ushort4 currentBorderLink;
+
+        bool underBorder = r + 1024 < height;
+        if (underBorder) {
+            currentBorderLink = links[(r+1024) * width + c];
+            sharedLinks[threadIdx.y + 1024] = currentBorderLink;
+        }
 
         sharedLinks[threadIdx.y] = currentLink;
         __syncthreads();
 
-        for (int i=0; i<10; i++) {
-            if (threadIdx.y + currentLink.y < 1024) {
+        for (int i=0; i<6; i++) {
+            if (underBorder && (threadIdx.y + currentBorderLink.y + 1024) < 2048) {
+                currentBorderLink.y += sharedLinks[threadIdx.y + 1024 + currentBorderLink.y].y;
+            }
+
+            if (underBorder) {
+                sharedLinks[threadIdx.y + 1024] = currentBorderLink;
+                __syncthreads();
+            }
+            
+            if (threadIdx.y + currentLink.y < height) {
                 // down
                 currentLink.y += sharedLinks[threadIdx.y + currentLink.y].y;
                 
