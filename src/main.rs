@@ -13,7 +13,7 @@ use custos::{
     },
     flag::AllocFlag,
     static_api::static_cuda,
-    ClearBuf, Device, OnDropBuffer, OnNewBuffer, CUDA,
+    ClearBuf, Device, OnDropBuffer, OnNewBuffer, CUDA, ShallowCopy,
 };
 use glow::*;
 use glutin::event::VirtualKeyCode;
@@ -73,7 +73,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let raw_data = std::fs::read(args.image_path).unwrap();
 
-        let (channels, width, height) = decode_raw_jpeg(&raw_data, device, Some(3000)).unwrap();
+        let (channels, width, height) = decode_raw_jpeg(&raw_data, device, None).unwrap();
 
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();
@@ -552,10 +552,10 @@ fn update_on_mode_change<'a, Mods>(
     threshold: i32,
 ) where
     Mods: OnDropBuffer
-        + OnNewBuffer<u8, CUDA<Mods>>
-        + OnNewBuffer<u32, CUDA<Mods>>
-        + OnNewBuffer<i32, CUDA<Mods>>
-        + OnNewBuffer<u16, CUDA<Mods>>,
+        + OnNewBuffer<u8, CUDA<Mods>, ()>
+        + OnNewBuffer<u32, CUDA<Mods>, ()>
+        + OnNewBuffer<i32, CUDA<Mods>, ()>
+        + OnNewBuffer<u16, CUDA<Mods>, ()>,
 {
     match mode {
         Mode::None => {
@@ -1006,7 +1006,7 @@ fn update_on_mode_change<'a, Mods>(
                     label_components_far(
                         &device,
                         &labels,
-                        &mut *unsafe { labels.shallow() },
+                        &mut unsafe { labels.base().shallow() },
                         // out_label,
                         &links,
                         width,
@@ -1159,7 +1159,7 @@ fn update_on_mode_change<'a, Mods>(
                         // &mut root_links,
                         // &root_candidates,
                         &labels,
-                        &mut *unsafe { labels.shallow() },
+                        &mut unsafe { labels.base().shallow() },
                         // out_label,
                         &links,
                         width,
@@ -1248,13 +1248,12 @@ fn update_on_mode_change<'a, Mods>(
             println!("connection info");
 
             let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
-
             // constant memory afterwards?
             let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
 
             let setup_dur = Instant::now();
 
-            label_with_single_links(
+            label_with_shared_links(
                 &mut labels,
                 &mut links,
                 &channels[0],
@@ -1266,11 +1265,24 @@ fn update_on_mode_change<'a, Mods>(
 
             globalize_single_link_horizontal(device, &links, width, height);
             globalize_single_link_vertical(device, &links, width, height);
+            println!("links: {:?}", &links.read()[..48]);
 
+            
+            // let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
+            // // constant memory afterwards?
+            // let mut shared_links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
+            // label_with_shared_links(
+            //     &mut labels,
+            //     &mut shared_links,
+            //     &channels[0],
+            //     &channels[1],
+            //     &channels[2],
+            //     width,
+            //     height,
+            // );
             // globalize_links_horizontal(&mut links, width, height);
             // globalize_links_vertical(&mut links, width, height);
 
-            // println!("links: {links:?}");
             device.stream().sync().unwrap();
 
             classify_root_candidates_shifting(device, &labels, &links, width, height).unwrap();
@@ -1295,7 +1307,7 @@ fn update_on_mode_change<'a, Mods>(
                     label_components_far_root(
                         &device,
                         &labels,
-                        &mut *unsafe { labels.shallow() },
+                        &mut unsafe { labels.base().shallow() },
                         &links,
                         width,
                         height,

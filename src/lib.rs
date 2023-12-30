@@ -28,7 +28,7 @@ pub fn check_error(value: u32, msg: &str) {
     }
 }
 
-pub unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>>>(
+pub unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()>>(
     raw_data: &[u8],
     device: &'a CUDA<Mods>,
     override_height: Option<usize>,

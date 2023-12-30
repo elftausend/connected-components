@@ -9,7 +9,6 @@ extern "C" {
         
         uchar4 currentPixel = make_uchar4(R[y * width + x], G[y * width + x], B[y * width + x], 255);
         
-        __shared__ ushort4 sharedLinks[32][33];
         ushort4 currentLink = make_ushort4(0, 0, 0, 0);
         
         // right 
@@ -51,12 +50,17 @@ extern "C" {
         }
 
         unsigned int labelIdx = y * width + x;
-        labels[labelIdx] = labelIdx;
+
         links[labelIdx] = currentLink;
+
+        
+        // links[labelIdx] = currentLink;
+
+        labels[labelIdx] = labelIdx;
     }
 
     __global__ void globalizeSingleLinkHorizontal(ushort4* links, int width, int height) {
-        unsigned int c = threadIdx.x;
+        unsigned int c = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int r = blockIdx.y * blockDim.y + threadIdx.y;
 
         if (c >= width || r >= height) {
@@ -76,11 +80,10 @@ extern "C" {
                 currentLink.x += sharedLinks[threadIdx.x + currentLink.x].x;
             }
 
-    
-            if ((int)threadIdx.x - (int)currentLink.z >= 0) {
-                // left
-                currentLink.z += sharedLinks[threadIdx.x - currentLink.z].z;
-            }
+            // if ((int)threadIdx.x - (int)currentLink.z >= 0) {
+            //     // left
+            //     currentLink.z += sharedLinks[threadIdx.x - currentLink.z].z;
+            // }
 
             sharedLinks[threadIdx.x] = currentLink;
             __syncthreads();
@@ -91,7 +94,7 @@ extern "C" {
 
     __global__ void globalizeSingleLinkVertical(ushort4* links, int width, int height) {
         unsigned int c = blockIdx.x * blockDim.x + threadIdx.x;
-        unsigned int r = threadIdx.y;
+        unsigned int r = blockIdx.y * blockDim.y + threadIdx.y;
 
         if (c >= width || r >= height) {
             return;
@@ -108,12 +111,12 @@ extern "C" {
             if (threadIdx.y + currentLink.y < 1024) {
                 // down
                 currentLink.y += sharedLinks[threadIdx.y + currentLink.y].y;
+                
             }
-
-            if ((int)threadIdx.y - (int)currentLink.w >= 0) {
-                // up
-                currentLink.w += sharedLinks[threadIdx.y - currentLink.w].w;
-            }
+            // if ((int)threadIdx.y - (int)currentLink.w >= 0) {
+            //     // up
+            //     currentLink.w += sharedLinks[threadIdx.y - currentLink.w].w;
+            // }
 
             sharedLinks[threadIdx.y] = currentLink;
             __syncthreads();
@@ -250,16 +253,16 @@ extern "C" {
             return;
         } 
 
-        // if (xl < width) {
-        //     unsigned short acc_link_z = links[y * width + xl].z;
-        //     unsigned short leftMove = acc_link_z;
+        if (xl < width) {
+            unsigned short acc_link_z = links[y * width + xl].z;
+            unsigned short leftMove = acc_link_z;
 
-        //     while (leftMove != 0) {
-        //         leftMove = links[y * width + xl - acc_link_z].z;
-        //         acc_link_z += leftMove;
-        //     }
-        //     links[y * width + xl].z = acc_link_z;
-        // }
+            while (leftMove != 0) {
+                leftMove = links[y * width + xl - acc_link_z].z;
+                acc_link_z += leftMove;
+            }
+            links[y * width + xl].z = acc_link_z;
+        }
 
         if (xr < width) {
             unsigned short acc_link_x = links[y * width + xr].x;
