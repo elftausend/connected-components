@@ -3,7 +3,8 @@ use std::{mem::size_of, ptr::null, time::Instant};
 use clap::Parser;
 use connected_components::{
     check_error, connected_comps::label_with_connection_info, decode_raw_jpeg,
-    globalize_single_link_horizontal, jpeg_decoder, label_with_single_links, Args, globalize_single_link_vertical,
+    globalize_single_link_horizontal, globalize_single_link_vertical, jpeg_decoder,
+    label_with_single_links, Args,
 };
 use custos::{
     cuda::{
@@ -13,7 +14,7 @@ use custos::{
     },
     flag::AllocFlag,
     static_api::static_cuda,
-    ClearBuf, Device, OnDropBuffer, OnNewBuffer, CUDA, ShallowCopy,
+    ClearBuf, Device, OnDropBuffer, OnNewBuffer, ShallowCopy, CUDA,
 };
 use glow::*;
 use glutin::event::VirtualKeyCode;
@@ -69,11 +70,18 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let device = static_cuda();
     // let device = &*Box::leak(Box::new(CUDA::<Base>::new(0).unwrap()));
     unsafe {
-        // let mut decoder = jpeg_decoder::JpegDecoder::new().unwrap();
+        let mut decoder = jpeg_decoder::JpegDecoder::new().unwrap();
 
         let raw_data = std::fs::read(args.image_path).unwrap();
 
         let (channels, width, height) = decode_raw_jpeg(&raw_data, device, None).unwrap();
+        decoder.width = width as usize;
+        decoder.height = height as usize;
+        // decoder.decode_rgb(&raw_data).unwrap();
+        // let channels = decoder.channels.clone().unwrap();
+
+        decoder.decode_rgbi(&raw_data).unwrap();
+        let channel = decoder.channel.unwrap();
         // return Ok(());
 
         let (gl, shader_version, window, event_loop) = {
@@ -471,6 +479,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     &mut surface,
                                     &mut surface_texture,
                                     channels,
+                                    &channel,
                                     width as usize,
                                     height as usize,
                                     &device,
@@ -487,6 +496,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     &mut surface,
                                     &mut surface_texture,
                                     channels,
+                                    &channel,
                                     width as usize,
                                     height as usize,
                                     &device,
@@ -503,6 +513,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     &mut surface,
                                     &mut surface_texture,
                                     channels,
+                                    &channel,
                                     width as usize,
                                     height as usize,
                                     &device,
@@ -520,6 +531,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         &mut surface,
                                         &mut surface_texture,
                                         channels,
+                                        &channel,
                                         width as usize,
                                         height as usize,
                                         &device,
@@ -545,6 +557,7 @@ fn update_on_mode_change<'a, Mods>(
     surface: &mut custos::Buffer<u8, CUDA<Mods>>,
     surface_texture: &mut custos::Buffer<u8, CUDA<Mods>>,
     channels: &[custos::Buffer<u8, CUDA<Mods>>],
+    interleaved_channel: &custos::Buffer<u8, CUDA<Mods>>,
     width: usize,
     height: usize,
     device: &'static CUDA<Mods>,
@@ -571,524 +584,11 @@ fn update_on_mode_change<'a, Mods>(
             .unwrap();
             device.stream().sync().unwrap();
         }
-        Mode::Labels => {
-            let mut labels: custos::Buffer<'static, u8, _> =
-                custos::Buffer::new(device, width * height * 4);
-            // let mut labels: custos::Buffer<'_, u8, CUDA> = buf![0u8; width * height * 4].to_dev::<crate::CUDA>();
-
-            label_pixels_combinations(&mut labels, width, height).unwrap();
-
-            device.stream().sync().unwrap();
-
-            // *updated_labels = buf![0u8; width * height * 4].to_cuda();
-            *updated_labels = labels.clone(); // only for mouse pos debug
-
-            let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
-
-            let start = Instant::now();
-
-            let mut ping = true;
-
-            let mut updates = true;
-
-            let offsets = [(0, 0), (0, 1), (1, 0), (1, 1)];
-
-            while updates {
-                // println!("epoch: {epoch}");
-                updates = false;
-                for (offset_y, offset_x) in offsets {
-                    for i in 0..width * height * 2 {
-                        // 0..width+height
-                        let mut start = Instant::now();
-                        if i == 1 {
-                            start = Instant::now();
-                        }
-
-                        if ping {
-                            label_components_shared(
-                                &labels,
-                                updated_labels,
-                                &channels[0],
-                                &channels[1],
-                                &channels[2],
-                                width,
-                                height,
-                                threshold,
-                                &mut has_updated,
-                                offset_y,
-                                offset_x,
-                            )
-                            .unwrap();
-                            ping = false;
-                        } else {
-                            label_components_shared(
-                                &updated_labels,
-                                &mut labels,
-                                &channels[0],
-                                &channels[1],
-                                &channels[2],
-                                width,
-                                height,
-                                threshold,
-                                &mut has_updated,
-                                offset_y,
-                                offset_x,
-                            )
-                            .unwrap();
-                            ping = true;
-                        }
-                        device.stream().sync().unwrap();
-
-                        if i == 1 {
-                            // println!("one iter of labeling took {:?}", start.elapsed());
-                        }
-
-                        if has_updated.read()[0] == 0 {
-                            // println!("iters: {i}");
-                            break;
-                        } else {
-                            updates = true;
-                        }
-
-                        has_updated.clear();
-                    }
-                }
-            }
-            /*
-            let final_iter = 0;
-            for i in final_iter..final_iter+1000 {
-                if i % 2 == 0 {
-                    label_components_master_label(
-                        &updated_labels,
-                        &mut labels,
-                        &channels[0],
-                        &channels[1],
-                        &channels[2],
-                        width,
-                        height,
-                        threshold,
-                        &mut has_updated
-                    )
-                    .unwrap();
-                } else {
-                    label_components_master_label(
-                        &labels,
-                        updated_labels,
-                        &channels[0],
-                        &channels[1],
-                        &channels[2],
-                        width,
-                        height,
-                        threshold,
-                        &mut has_updated
-                    )
-                    .unwrap();
-
-                }
-                device.stream().sync().unwrap();
-
-                if has_updated.read()[0] == 0 {
-                    println!("master step finished after {i} iters");
-                    break;
-                }
-
-                has_updated.clear();
-            }*/
-
-            println!("labeling took {:?}", start.elapsed());
-
-            // copy_to_surface(&labels, surface, width, height);
-            device.stream().sync().unwrap();
-            if ping {
-                copy_to_surface(&labels, surface, width, height);
-            } else {
-                copy_to_surface(&updated_labels, surface, width, height);
-            }
-
-            // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
-            // fill the core f red
-            // color_component_at_pixel_exact(&surface_texture, surface, 8, 64, width, height);
-
-            device.stream().sync().unwrap();
-        }
+        Mode::Labels => {}
         Mode::MouseHighlight => {}
-        Mode::RowWise => {
-            let mut labels: custos::Buffer<u8, _> = custos::Buffer::new(device, width * height * 4);
-            // let mut labels = buf![0u8; width * height * 4].to_cuda();
-
-            label_pixels_combinations(&mut labels, width, height).unwrap();
-
-            device.stream().sync().unwrap();
-
-            // *updated_labels = buf![0u8; width * height * 4].to_cuda();
-            *updated_labels = custos::Buffer::new(&device, width * height * 4);
-
-            let mut has_updated: custos::Buffer<'_, u8, _> =
-                custos::Buffer::<u8, _>::new(device, 1);
-
-            let start = Instant::now();
-            for i in 0..width * height * 10 {
-                if i % 2 == 0 {
-                    label_components_master_label(
-                        &labels,
-                        updated_labels,
-                        &channels[0],
-                        &channels[1],
-                        &channels[2],
-                        width,
-                        height,
-                        threshold,
-                        &mut has_updated,
-                    )
-                    .unwrap();
-                } else {
-                    label_components_master_label(
-                        &updated_labels,
-                        &mut labels,
-                        &channels[0],
-                        &channels[1],
-                        &channels[2],
-                        width,
-                        height,
-                        threshold,
-                        &mut has_updated,
-                    )
-                    .unwrap();
-                }
-                device.stream().sync().unwrap();
-                if has_updated.read()[0] == 0 {
-                    println!("master step finished after {i} iters");
-                    break;
-                }
-                has_updated.clear();
-            }
-            device.stream().sync().unwrap();
-            println!("(master,rowwise) labeling took {:?}", start.elapsed());
-            copy_to_surface(&labels, surface, width, height);
-        }
-        Mode::ConnectionInfo32x32 => {
-            println!("connection info");
-
-            let mut pong_updated_labels: custos::Buffer<u32, _> =
-                custos::Buffer::new(device, width * height);
-
-            let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
-
-            // constant memory afterwards?
-            let mut links: custos::Buffer<u8, _> = custos::Buffer::new(device, width * height * 4);
-
-            // let mut labels = buf![0u8; width * height * 4].to_cuda();
-
-            label_with_connection_info(
-                &mut labels,
-                &mut links,
-                &channels[0],
-                &channels[1],
-                &channels[2],
-                5,
-                width,
-                height,
-            );
-
-            // println!("labels: {:?}", labels.read());
-            // return;
-
-            device.stream().sync().unwrap();
-            // println!("links: {:?}", links.read());
-            let mut pong_updated_labels = labels.clone();
-            *colorless_updated_labels = labels.clone();
-            // copy_to_surface_unsigned(&labels, surface, width, height);
-            device.stream().sync().unwrap();
-            // let sus = &pong_updated_labels.read()[10000..20000];
-            // println!("sus: {sus:?}");
-            // return;
-            // *updated_labels = labels.clone(); // only for mouse pos debug
-
-            let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
-
-            let start = Instant::now();
-
-            let mut ping = true;
-
-            let mut updates = true;
-            let offsets = [(0, 0), (0, 1), (1, 0), (1, 1)];
-
-            while updates {
-                // println!("epoch: {epoch}");
-                updates = false;
-                for (offset_y, offset_x) in offsets {
-                    loop {
-                        // label_components_shared_with_connections(
-                        //         &labels,
-                        //         &mut unsafe { labels.shallow() },
-                        //         width,
-                        //         height,
-                        //         threshold,
-                        //         &mut has_updated,
-                        //         offset_y,
-                        //         offset_x,
-                        //     )
-                        //     .unwrap();
-
-                        // 0..width+height
-                        let mut start = Instant::now();
-                        // if i == 1 {
-                        // start = Instant::now();
-                        // }
-                        if ping {
-                            label_components_shared_with_connections_and_links(
-                                &labels,
-                                &mut pong_updated_labels,
-                                &links,
-                                width,
-                                height,
-                                threshold,
-                                &mut has_updated,
-                                offset_y,
-                                offset_x,
-                            )
-                            .unwrap();
-                            ping = false;
-                        } else {
-                            label_components_shared_with_connections_and_links(
-                                &pong_updated_labels,
-                                &mut labels,
-                                &links,
-                                width,
-                                height,
-                                threshold,
-                                &mut has_updated,
-                                offset_y,
-                                offset_x,
-                            )
-                            .unwrap();
-                            ping = true;
-                        }
-                        device.stream().sync().unwrap();
-
-                        // if i == 1 {
-                        // println!("one iter of labeling took {:?}", start.elapsed());
-                        // }
-
-                        if has_updated.read()[0] == 0 {
-                            // println!("iters: {i}");
-                            break;
-                        } else {
-                            updates = true;
-                        }
-
-                        has_updated.clear();
-                    }
-                }
-            }
-
-            device.stream().sync().unwrap();
-            println!("labeling took {:?}", start.elapsed());
-
-            // copy_to_surface(&labels, surface, width, height);
-            if ping {
-                *colorless_updated_labels = labels.clone();
-                copy_to_surface_unsigned(&labels, surface, width, height);
-                // println!("labels: {:?}", labels.read());
-                copy_to_interleaved_buf(&labels, updated_labels, width, height);
-            } else {
-                *colorless_updated_labels = pong_updated_labels.clone();
-                // println!("labels: {:?}", pong_updated_labels.read());
-                copy_to_surface_unsigned(&pong_updated_labels, surface, width, height);
-                copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
-            }
-
-            // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
-            // fill the core f red
-            // color_component_at_pixel_exact(&surface_texture, surface, 8, 64, width, height);
-
-            device.stream().sync().unwrap();
-        }
-        Mode::ConnectionInfoWide => {
-            println!("connection info");
-
-            let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
-
-            // constant memory afterwards?
-            let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
-
-            // let mut labels = buf![0u8; width * height * 4].to_cuda();
-            let setup_dur = Instant::now();
-
-            label_with_shared_links(
-                &mut labels,
-                &mut links,
-                &channels[0],
-                &channels[1],
-                &channels[2],
-                width,
-                height,
-            );
-            globalize_links_horizontal(&mut links, width, height);
-            globalize_links_vertical(&mut links, width, height);
-
-            // println!("links: {links:?}");
-
-            // label_with_connection_info_more_32(
-            //     &mut labels,
-            //     &mut links,
-            //     &channels[0],
-            //     &channels[1],
-            //     &channels[2],
-            //     5,
-            //     width,
-            //     height,
-            // );
-
-            device.stream().sync().unwrap();
-            println!("setup dur: {:?}", setup_dur.elapsed());
-            // println!("links: {links:?}");
-            // return;
-            let mut pong_updated_labels = labels.clone();
-            *colorless_updated_labels = labels.clone();
-            device.stream().sync().unwrap();
-
-            // let lazy_device = ManuallyDrop::new(CUDA::<Base>::new(0).unwrap());
-            // fn_cache(&lazy_device, CUDA_SOURCE_MORE32, "labelComponentsFar").unwrap();
-            let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
-
-            let start = Instant::now();
-
-            let mut ping = true;
-            let mut iters = 0;
-            let mut lazy_label = || {
-                unsafe {
-                    cuStreamBeginCapture(
-                        device.stream.0,
-                        CUStreamCaptureMode::CU_STREAM_CAPTURE_MODE_GLOBAL,
-                    )
-                }
-                .to_result()
-                .unwrap();
-
-                for _ in 0..140 {
-                    if ping {
-                        label_components_far(
-                            &device,
-                            &labels,
-                            &mut pong_updated_labels,
-                            &links,
-                            width,
-                            height,
-                            &mut has_updated,
-                        )
-                        .unwrap();
-                        ping = false;
-                    } else {
-                        label_components_far(
-                            &device,
-                            &pong_updated_labels,
-                            &mut labels,
-                            &links,
-                            width,
-                            height,
-                            &mut has_updated,
-                        )
-                        .unwrap();
-                        ping = true;
-                    }
-                }
-                let graph = LazyCudaGraph::new(device.stream()).unwrap();
-                graph.launch(device.stream.0).unwrap();
-                let new_graph = Instant::now();
-                device.stream().sync().unwrap();
-                println!("lazy graph exec: {:?}", new_graph.elapsed());
-            };
-
-            // lazy_label(); // 3ms
-            let mut no_ping_pong = || {
-                let out_label = unsafe { &mut *((&mut labels) as *mut custos::Buffer<_, _>) };
-                loop {
-                    label_components_far(
-                        &device,
-                        &labels,
-                        &mut unsafe { labels.base().shallow() },
-                        // out_label,
-                        &links,
-                        width,
-                        height,
-                        &mut has_updated,
-                    )
-                    .unwrap();
-
-                    // device.stream().sync().unwrap();
-                    if has_updated.read()[0] == 0 {
-                        break;
-                    }
-                    iters += 1;
-                    has_updated.clear();
-                }
-            };
-
-            no_ping_pong();
-
-            let mut eager_label = || {
-                // batch n (100) launches to reduce kernel overhead?
-                loop {
-                    if ping {
-                        label_components_far(
-                            &device,
-                            &labels,
-                            &mut pong_updated_labels,
-                            &links,
-                            width,
-                            height,
-                            &mut has_updated,
-                        )
-                        .unwrap();
-                        ping = false;
-                    } else {
-                        label_components_far(
-                            &device,
-                            &pong_updated_labels,
-                            &mut labels,
-                            &links,
-                            width,
-                            height,
-                            &mut has_updated,
-                        )
-                        .unwrap();
-                        ping = true;
-                    }
-                    iters += 1;
-                    device.stream().sync().unwrap();
-                    // break;
-                    if has_updated.read()[0] == 0 {
-                        break;
-                    }
-
-                    has_updated.clear();
-                }
-            };
-
-            // eager_label(); // 4.3ms
-            // device.stream().sync().unwrap();
-            println!("labeling took {:?}, iters: {iters}", start.elapsed());
-
-            // copy_to_surface(&labels, surface, width, height);
-            if ping {
-                *colorless_updated_labels = labels.clone();
-                copy_to_surface_unsigned(&labels, surface, width, height);
-                // println!("labels: {:?}", labels.read());
-                copy_to_interleaved_buf(&labels, updated_labels, width, height);
-            } else {
-                *colorless_updated_labels = pong_updated_labels.clone();
-                // println!("labels: {:?}", pong_updated_labels.read());
-                copy_to_surface_unsigned(&pong_updated_labels, surface, width, height);
-                copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
-            }
-
-            // color_component_at_pixel(&surface_texture, surface, 0, 0, width, height);
-            // fill the core f red
-            // color_component_at_pixel_exact(&surface_texture, surface, 8, 64, width, height);
-
-            device.stream().sync().unwrap();
-        }
+        Mode::RowWise => {}
+        Mode::ConnectionInfo32x32 => {}
+        Mode::ConnectionInfoWide => {}
         Mode::RootLabel => {
             println!("connection info");
 
@@ -1268,7 +768,6 @@ fn update_on_mode_change<'a, Mods>(
             globalize_single_link_vertical(device, &links, width, height);
             println!("links: {:?}", &links.read()[..48]);
 
-            
             // let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
             // // constant memory afterwards?
             // let mut shared_links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
@@ -1415,6 +914,7 @@ use connected_components::{
     },
     CUDA_SOURCE_MORE32,
 };
+use nvjpeg_sys::{check, nvjpegChromaSubsampling_t, nvjpegGetImageInfo};
 
 pub use self::CUresourcetype_enum as CUresourcetype;
 

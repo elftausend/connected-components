@@ -60,7 +60,8 @@ impl JpegDecoder {
             raw_data.len(),
             nvjpegOutputFormat_t_NVJPEG_OUTPUT_RGBI,
             &mut self.image,
-            static_cuda().stream().0 as *mut _,
+            // static_cuda().stream().0 as *mut _,
+            null_mut(),
         );
         check!(status, "Could not decode image. ");
         Ok(())

@@ -8,7 +8,7 @@ use std::ptr::null_mut;
 use clap::Parser;
 pub use connected_comps::*;
 use cuda_driver_sys::cuCtxSynchronize;
-use custos::{OnDropBuffer, OnNewBuffer, CUDA, Device};
+use custos::{Device, OnDropBuffer, OnNewBuffer, CUDA};
 use nvjpeg_sys::{
     check, nvjpegChromaSubsampling_t, nvjpegCreateSimple, nvjpegDecode, nvjpegDestroy,
     nvjpegGetImageInfo, nvjpegHandle_t, nvjpegImage_t, nvjpegJpegStateCreate,
