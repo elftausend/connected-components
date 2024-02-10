@@ -121,6 +121,25 @@ pub fn label_with_connection_info<Mods: OnDropBuffer>(
     .unwrap()
 }
 
+pub fn label_with_shared_links_interleaved<Mods: OnDropBuffer>(
+    target: &mut custos::Buffer<u32, CUDA<Mods>>,
+    links: &mut custos::Buffer<u16, CUDA<Mods>>,
+    pixels: &custos::Buffer<u8, CUDA<Mods>>,
+    width: usize,
+    height: usize,
+) {
+    launch_kernel(
+        target.device(),
+        [256, 128, 1],
+        [32, 32, 1],
+        0,
+        DEC_CCL,
+        "labelWithSharedLinksInterleaved",
+        &[target, links, &pixels, &width, &height],
+    )
+    .unwrap()
+}
+
 pub fn label_with_shared_links<Mods: OnDropBuffer>(
     target: &mut custos::Buffer<u32, CUDA<Mods>>,
     links: &mut custos::Buffer<u16, CUDA<Mods>>,

@@ -4,7 +4,8 @@ use clap::Parser;
 use connected_components::{
     check_error, connected_comps::label_with_connection_info, decode_raw_jpeg,
     globalize_single_link_horizontal, globalize_single_link_vertical, jpeg_decoder,
-    label_with_single_links, Args,
+    label_with_shared_links_interleaved, label_with_single_links, utils::to_interleaved_rgba8,
+    Args,
 };
 use custos::{
     cuda::{
@@ -75,13 +76,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let raw_data = std::fs::read(args.image_path).unwrap();
 
         let (channels, width, height) = decode_raw_jpeg(&raw_data, device, None).unwrap();
-        decoder.width = width as usize;
-        decoder.height = height as usize;
+        let channel = to_interleaved_rgba8(device, &channels, width, height);
+        // decoder.width = width as usize;
+        // decoder.height = height as usize;
         // decoder.decode_rgb(&raw_data).unwrap();
         // let channels = decoder.channels.clone().unwrap();
 
-        decoder.decode_rgbi(&raw_data).unwrap();
-        let channel = decoder.channel.unwrap();
+        // decoder.decode_rgbi(&raw_data).unwrap();
+        // let channel = decoder.channel.unwrap();
         // return Ok(());
 
         let (gl, shader_version, window, event_loop) = {
@@ -605,15 +607,23 @@ fn update_on_mode_change<'a, Mods>(
             // let mut labels = buf![0u8; width * height * 4].to_cuda();
             let setup_dur = Instant::now();
 
-            label_with_shared_links(
+            label_with_shared_links_interleaved(
                 &mut labels,
                 &mut links,
-                &channels[0],
-                &channels[1],
-                &channels[2],
+                &interleaved_channel,
                 width,
                 height,
             );
+            // label_with_shared_links(
+            //     &mut labels,
+            //     &mut links,
+            //     &channels[0],
+            //     &channels[1],
+            //     &channels[2],
+            //     width,
+            //     height,
+            // );
+
             globalize_links_horizontal(&mut links, width, height);
             globalize_links_vertical(&mut links, width, height);
 

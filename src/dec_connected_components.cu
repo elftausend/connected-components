@@ -157,6 +157,87 @@ extern "C" {
 
         links[r * width + c] = sharedLinks[threadIdx.y];
     }
+    
+    __global__ void labelWithSharedLinksInterleaved(unsigned int* labels, ushort4* links, uchar4* pixels, int width, int height) {
+        unsigned int c = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int r = blockIdx.y * blockDim.y + threadIdx.y;
+        if (c >= width || r >= height) {
+            return;
+        }
+        int threshold = 20;
+
+        unsigned int idx = r * width + c;
+
+        uchar4 currentPixel = pixels[idx];
+
+        __shared__ ushort4 sharedLinks[32][33];
+        ushort4 currentLink = make_ushort4(0, 0, 0, 0);
+
+        unsigned int rightMove = c < width - 1 ? 1 : 0;
+        unsigned int downMove = r < height - 1 ? 1 : 0;
+        unsigned int leftMove = c > 0 ? 1 : 0;
+        unsigned int upMove = r > 0 ? 1 : 0;
+
+        uchar4 rightPixel = pixels[idx + rightMove];
+        uchar4 downPixel = pixels[idx + downMove * width];
+        uchar4 leftPixel = pixels[idx - leftMove];
+        uchar4 upPixel = pixels[idx - upMove * width];
+
+        int rightPixelDifferenceSum = abs(rightPixel.x - currentPixel.x) + abs(rightPixel.y - currentPixel.y) + abs(rightPixel.z - currentPixel.z);  
+        if (rightPixelDifferenceSum < threshold && rightMove) {    
+            currentLink.x = 1;
+        }
+
+        int downPixelDifferenceSum = abs(downPixel.x - currentPixel.x) + abs(downPixel.y - currentPixel.y) + abs(downPixel.z - currentPixel.z);
+        if (downPixelDifferenceSum < threshold && downMove) {    
+            currentLink.y = 1;
+        }
+
+        int leftPixelDifferenceSum = abs(leftPixel.x - currentPixel.x) + abs(leftPixel.y - currentPixel.y) + abs(leftPixel.z - currentPixel.z);
+        if (leftPixelDifferenceSum < threshold && leftMove) {    
+            currentLink.z = 1;
+        }
+
+        int upPixelDifferenceSum = abs(upPixel.x - currentPixel.x) + abs(upPixel.y - currentPixel.y) + abs(upPixel.z - currentPixel.z);
+        if (upPixelDifferenceSum < threshold && upMove) {    
+            currentLink.w = 1;
+        }
+
+        sharedLinks[threadIdx.y][threadIdx.x] = currentLink;
+        __syncthreads();
+
+        for (int i=0; i<5; i++) {
+            if (threadIdx.x + currentLink.x < 32) {
+                // right
+                currentLink.x += sharedLinks[threadIdx.y][threadIdx.x + currentLink.x].x;
+            }
+
+            if (threadIdx.y + currentLink.y < 32) {
+                // down
+                currentLink.y += sharedLinks[threadIdx.y + currentLink.y][threadIdx.x].y;
+            }
+
+            if ((int)threadIdx.x - (int)currentLink.z >= 0) {
+                // left
+                currentLink.z += sharedLinks[threadIdx.y][threadIdx.x - currentLink.z].z;
+            }
+
+            if ((int)threadIdx.y - (int)currentLink.w >= 0) {
+                // up
+                currentLink.w += sharedLinks[threadIdx.y - currentLink.w][threadIdx.x].w;
+            }
+
+            sharedLinks[threadIdx.y][threadIdx.x] = currentLink;
+            __syncthreads();
+        }
+
+        links[idx] = sharedLinks[threadIdx.y][threadIdx.x];
+
+        
+        // links[labelIdx] = currentLink;
+
+        labels[idx] = idx;
+    }
 
     __global__ void labelWithSharedLinks(unsigned int* labels, ushort4* links, unsigned char* R,unsigned char* G,unsigned char* B, int width, int height) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;

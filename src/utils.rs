@@ -1,10 +1,10 @@
 use std::ffi::CString;
 
 use custos::{
-    cuda::{fn_cache, CUDAPtr},
+    cuda::{fn_cache, launch_kernel, CUDAPtr},
     flag::AllocFlag,
     prelude::CUBuffer,
-    Buffer, CUDA,
+    Buffer, Device, CUDA,
 };
 
 use crate::check_error;
@@ -41,6 +41,46 @@ pub fn get_constant_memory<'a, T>(
         device: Some(device),
         // ident: None,
     }
+}
+
+pub fn to_interleaved_rgba8<'a>(
+    device: &'a CUDA,
+    channels: &[Buffer<u8, CUDA>; 3],
+    width: i32,
+    height: i32,
+) -> Buffer<'a, u8, CUDA> {
+    let rgba8 = device.buffer((width * height * 4) as usize);
+
+    let src = r#"
+        extern "C" __global__ void to_interleaved_rgba8(unsigned char* red, unsigned char* green, unsigned char* blue, uchar4* rgba, int width, int height) {
+            int c = blockDim.x * blockIdx.x + threadIdx.x;
+            int r = blockDim.y * blockIdx.y + threadIdx.y;
+            if (c >= width || r >= height) {
+                return;
+            }
+            int idx = r * width + c;
+            rgba[idx] = make_uchar4(red[idx], green[idx], blue[idx], 255);
+        }
+    "#;
+
+    launch_kernel(
+        device,
+        [256, 128, 1],
+        [32, 32, 1],
+        0,
+        src,
+        "to_interleaved_rgba8",
+        &[
+            &channels[0],
+            &channels[1],
+            &channels[2],
+            &&rgba8,
+            &width,
+            &height,
+        ],
+    )
+    .unwrap();
+    rgba8
 }
 
 // move to custos, as well as the other cu functions

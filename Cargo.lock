@@ -316,6 +316,19 @@ dependencies = [
 [[package]]
 name = "custos"
 version = "0.7.0"
+dependencies = [
+ "custos-macro",
+]
+
+[[package]]
+name = "custos-macro"
+version = "0.1.1"
+source = "git+https://github.com/elftausend/custos-macro#b6e3487c39b2df6800ee679d61164f278773bdcb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
+]
 
 [[package]]
 name = "darling"
