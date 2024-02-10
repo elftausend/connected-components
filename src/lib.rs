@@ -7,7 +7,8 @@ use std::ptr::null_mut;
 
 use clap::Parser;
 pub use connected_comps::*;
-use custos::{OnDropBuffer, OnNewBuffer, CUDA};
+use cuda_driver_sys::cuCtxSynchronize;
+use custos::{OnDropBuffer, OnNewBuffer, CUDA, Device};
 use nvjpeg_sys::{
     check, nvjpegChromaSubsampling_t, nvjpegCreateSimple, nvjpegDecode, nvjpegDestroy,
     nvjpegGetImageInfo, nvjpegHandle_t, nvjpegImage_t, nvjpegJpegStateCreate,
@@ -61,7 +62,6 @@ pub unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods
     );
     check!(status, "Could not get image info. ");
 
-    heights[0] = heights[1] * 2;
     if let Some(height) = override_height {
         heights[0] = height as i32;
     }
@@ -74,9 +74,9 @@ pub unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods
     image.pitch[1] = widths[0] as usize;
     image.pitch[2] = widths[0] as usize;
 
-    let channel0 = custos::Buffer::<u8, _>::new(device, image.pitch[0] * heights[0] as usize);
-    let channel1 = custos::Buffer::<u8, _>::new(device, image.pitch[0] * heights[0] as usize);
-    let channel2 = custos::Buffer::<u8, _>::new(device, image.pitch[0] * heights[0] as usize);
+    let channel0 = device.buffer(image.pitch[0] * heights[0] as usize);
+    let channel1 = device.buffer(image.pitch[0] * heights[0] as usize);
+    let channel2 = device.buffer(image.pitch[0] * heights[0] as usize);
 
     image.channel[0] = channel0.cu_ptr() as *mut _;
     image.channel[1] = channel1.cu_ptr() as *mut _;
@@ -95,15 +95,15 @@ pub unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods
     device.mem_transfer_stream.sync().unwrap();
     check!(status, "Could not decode image. ");
 
-    //device.stream().sync()?;
+    unsafe { cuCtxSynchronize() };
+    device.stream().sync()?;
 
     // free
+    // let status = nvjpegJpegStateDestroy(jpeg_state);
+    // check!(status, "Could not free jpeg state. ");
 
-    let status = nvjpegJpegStateDestroy(jpeg_state);
-    check!(status, "Could not free jpeg state. ");
-
-    let status = nvjpegDestroy(handle);
-    check!(status, "Could not free nvjpeg handle. ");
+    // let status = nvjpegDestroy(handle);
+    // check!(status, "Could not free nvjpeg handle. ");
 
     Ok(([channel0, channel1, channel2], widths[0], heights[0]))
 }

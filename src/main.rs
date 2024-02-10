@@ -74,6 +74,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let raw_data = std::fs::read(args.image_path).unwrap();
 
         let (channels, width, height) = decode_raw_jpeg(&raw_data, device, None).unwrap();
+        // return Ok(());
 
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();

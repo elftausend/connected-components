@@ -20,7 +20,7 @@ fn converge(
     width: usize,
     height: usize,
 ) -> usize {
-    let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
+    let mut has_updated = custos::Buffer::<_, _>::new(device, 1);
     let mut iters = 0;
 
     let mut event1: CUevent = null_mut();
@@ -56,6 +56,11 @@ fn converge(
 
         iters += 1;
         if has_updated.read()[0] == 0 {
+            break;
+        }
+
+        // ncu
+        if iters == 20 {
             break;
         }
 
@@ -96,7 +101,7 @@ fn main() {
     let width = width as usize;
     let height = height as usize;
 
-    for _ in 0..2 {
+    for _ in 0..1 {
         let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
 
         // constant memory afterwards?
