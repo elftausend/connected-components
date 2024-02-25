@@ -448,15 +448,15 @@ extern "C" {
         }
 
         if (input[currentLabel] >> 31) {
-            // unsigned int rootLabel = input[currentLabel - 1];
-            // if (rootLabel > currentLabel) {
-            currentLabel = input[currentLabel] & mask;
-                // *hasUpdated = 1;
+            unsigned int rootLabel = input[currentLabel] & mask;
+            if (rootLabel > currentLabel) {
+                currentLabel = rootLabel;
+                *hasUpdated = 1;
 
                 // out[outIdx] = currentLabel;
                 // return;
 
-            // }
+            }
         }
 
         unsigned int farRightLabel = input[farRightIdx] & mask;
