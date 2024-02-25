@@ -329,7 +329,7 @@ extern "C" {
     }
 
     __global__ void globalizeLinksVertical(ushort4* links, int active_yd, int active_yu, int width, int height) {
-        unsigned int x = x * blockDim.x + threadIdx.x;
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int yd = active_yd * blockDim.y + threadIdx.y;
         if (x >= width) {
             return;
@@ -421,7 +421,7 @@ extern "C" {
 
         int outIdx = y * width + x;
 
-        int mask = 0b01111111111111111111111111111111;
+        unsigned int mask = 0b01111111111111111111111111111111;
         
         unsigned int currentLabelRootCandidate = input[outIdx];
         unsigned int is_root_candidate = currentLabelRootCandidate & ~mask;
