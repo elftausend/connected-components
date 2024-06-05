@@ -1,4 +1,4 @@
-use std::{mem::size_of, ptr::null, time::Instant};
+use std::{fmt::Display, mem::size_of, ptr::null, time::Instant};
 
 use clap::Parser;
 use connected_components::{
@@ -641,6 +641,19 @@ fn update_on_mode_change<'a, Mods>(
             // );
 
             device.stream().sync().unwrap();
+
+            let labels_read = labels.read();
+            let links_read = links.read();
+            fn write_out<T: Display>(path: &str, data: &[T]) {
+                use std::fmt::Write;
+                let mut out = String::new();
+                for val in data {
+                    write!(&mut out, "{val} ").unwrap();
+                }
+                std::fs::write(path, out).unwrap();
+            }
+            write_out("labels.out", &labels_read);
+            write_out("links.out", &links_read);
 
             classify_root_candidates_shifting(device, &labels, &links, width, height).unwrap();
 

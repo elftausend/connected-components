@@ -410,6 +410,52 @@ extern "C" {
         }
 
     }
+
+    __global__ void rootFind(unsigned int* input, unsigned int* out, ushort4* links, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (x >= width || y >= height) {
+            return;
+        }
+
+        unsigned int currentLabel = input[y * width + x];
+        ushort4 currentLinks = links[y * width + x];
+
+        unsigned int borderLinkIdx = (y + currentLinks.y) * width + x;
+        ushort4 borderLinks = links[borderLinkIdx];
+
+        unsigned int firstBorderLinkIdx = borderLinkIdx;
+
+        unsigned int largestLabel = currentLabel;
+        
+        char found = 0;
+        char lastDir = 0;
+        do {
+            if (borderLinks.x == 1 && lastDir != 2) {
+                lastDir = 0;
+                borderLinkIdx = borderLinkIdx + 1;
+                borderLinks = links[borderLinkIdx];
+            } else if (borderLinks.y == 1 && lastDir != 3) {
+                lastDir = 1;
+                borderLinkIdx = borderLinkIdx + width;
+                borderLinks = links[borderLinkIdx];
+            } else if (borderLinks.z == 1 && lastDir != 0) {
+                lastDir = 2;
+                borderLinkIdx = borderLinkIdx - 1;
+                borderLinks = links[borderLinkIdx];
+            } else if (borderLinks.w == 1 && lastDir != 1) {
+                lastDir = 3;
+                borderLinkIdx = borderLinkIdx - width;
+                borderLinks = links[borderLinkIdx];
+            }
+
+            largestLabel = max(input[borderLinkIdx], largestLabel);
+        }
+        while (firstBorderLinkIdx != borderLinkIdx);
+
+        out[y * width + x] = largestLabel;
+    }
     
     __global__ void labelComponentsFarRootCandidates(unsigned int* input, unsigned int* out, ushort4* links, int width, int height, int* hasUpdated) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
