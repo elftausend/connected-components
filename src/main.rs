@@ -4,8 +4,8 @@ use clap::Parser;
 use connected_components::{
     check_error, connected_comps::label_with_connection_info, decode_raw_jpeg,
     globalize_single_link_horizontal, globalize_single_link_vertical, jpeg_decoder,
-    label_with_shared_links_interleaved, label_with_single_links, utils::to_interleaved_rgba8,
-    Args,
+    label_with_shared_links_interleaved, label_with_single_links,
+    root_label::label_components_root_find, utils::to_interleaved_rgba8, Args,
 };
 use custos::{
     cuda::{
@@ -30,6 +30,7 @@ enum Mode {
     ConnectionInfo32x32,
     RootLabel,
     M2048,
+    FindRoot,
 }
 
 impl Mode {
@@ -38,7 +39,8 @@ impl Mode {
             Mode::None => Mode::Labels,
             Mode::Labels => Mode::MouseHighlight,
             Mode::MouseHighlight => Mode::RowWise,
-            Mode::RowWise => Mode::M2048,
+            Mode::RowWise => Mode::FindRoot,
+            Mode::FindRoot => Mode::M2048,
             Mode::M2048 => Mode::RootLabel,
             Mode::RootLabel => Mode::ConnectionInfoWide,
             Mode::ConnectionInfoWide => Mode::ConnectionInfo32x32,
@@ -55,6 +57,7 @@ impl From<u8> for Mode {
             1 => Mode::Labels,
             2 => Mode::MouseHighlight,
             3 => Mode::RowWise,
+            4 => Mode::FindRoot,
             5 => Mode::M2048,
             6 => Mode::RootLabel,
             7 => Mode::ConnectionInfoWide,
@@ -642,18 +645,18 @@ fn update_on_mode_change<'a, Mods>(
 
             device.stream().sync().unwrap();
 
-            let labels_read = labels.read();
-            let links_read = links.read();
-            fn write_out<T: Display>(path: &str, data: &[T]) {
-                use std::fmt::Write;
-                let mut out = String::new();
-                for val in data {
-                    write!(&mut out, "{val} ").unwrap();
-                }
-                std::fs::write(path, out).unwrap();
-            }
-            write_out("labels.out", &labels_read);
-            write_out("links.out", &links_read);
+            // let labels_read = labels.read();
+            // let links_read = links.read();
+            // fn write_out<T: Display>(path: &str, data: &[T]) {
+            //     use std::fmt::Write;
+            //     let mut out = String::new();
+            //     for val in data {
+            //         write!(&mut out, "{val} ").unwrap();
+            //     }
+            //     std::fs::write(path, out).unwrap();
+            // }
+            // write_out("labels.out", &labels_read);
+            // write_out("links.out", &links_read);
 
             classify_root_candidates_shifting(device, &labels, &links, width, height).unwrap();
 
@@ -868,6 +871,59 @@ fn update_on_mode_change<'a, Mods>(
                 copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
             }
 
+            device.stream().sync().unwrap();
+        }
+        Mode::FindRoot => {
+            println!("find root");
+
+            let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
+
+            // constant memory afterwards?
+            let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
+            // let mut labels = buf![0u8; width * height * 4].to_cuda();
+            let setup_dur = Instant::now();
+
+            label_with_shared_links_interleaved(
+                &mut labels,
+                &mut links,
+                interleaved_channel,
+                width,
+                height,
+            );
+
+            globalize_links_horizontal(&mut links, width, height);
+            globalize_links_vertical(&mut links, width, height);
+
+            device.stream().sync().unwrap();
+
+            // classify_root_candidates_shifting(device, &labels, &links, width, height).unwrap();
+
+            device.stream().sync().unwrap();
+            println!("setup dur: {:?}", setup_dur.elapsed());
+
+            let mut pong_updated_labels = labels.clone();
+            *colorless_updated_labels = labels.clone();
+            device.stream().sync().unwrap();
+
+            let start = Instant::now();
+
+            label_components_root_find(
+                device,
+                &labels,
+                &mut pong_updated_labels,
+                &links,
+                width,
+                height,
+            )
+            .unwrap();
+            device.stream().sync().unwrap();
+
+            println!("labeling took {:?}, ", start.elapsed());
+
+            *colorless_updated_labels = labels.clone();
+            copy_to_surface_unsigned(&pong_updated_labels, surface, width, height);
+            // println!("labels: {:?}", labels.read());
+            copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
             device.stream().sync().unwrap();
         }
     }

@@ -2,7 +2,11 @@ use std::{ptr::null_mut, time::Instant};
 
 use clap::Parser;
 use connected_components::{
-    check_error, decode_raw_jpeg, globalize_links_horizontal, globalize_links_vertical, label_with_shared_links, label_with_shared_links_interleaved, root_label::{classify_root_candidates_shifting, label_components_far_root}, utils::to_interleaved_rgba8, Args
+    check_error, decode_raw_jpeg, globalize_links_horizontal, globalize_links_vertical,
+    label_with_shared_links, label_with_shared_links_interleaved,
+    root_label::{classify_root_candidates_shifting, label_components_far_root},
+    utils::to_interleaved_rgba8,
+    Args,
 };
 use cuda_driver_sys::{
     cuEventCreate, cuEventDestroy_v2, cuEventElapsedTime, cuEventRecord, cuEventSynchronize,
@@ -107,7 +111,7 @@ fn main() {
 
         // let setup_dur = Instant::now();
         device.stream().sync().unwrap();
-        
+
         label_with_shared_links_interleaved(
             &mut labels,
             &mut links,
@@ -115,7 +119,7 @@ fn main() {
             width,
             height,
         );
-        
+
         // label_with_shared_links(
         //     &mut labels,
         //     &mut links,

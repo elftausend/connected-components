@@ -419,6 +419,8 @@ extern "C" {
             return;
         }
 
+        out[y * width + x] = 0;
+
         unsigned int currentLabel = input[y * width + x];
         ushort4 currentLinks = links[y * width + x];
 
@@ -426,34 +428,59 @@ extern "C" {
         ushort4 borderLinks = links[borderLinkIdx];
 
         unsigned int firstBorderLinkIdx = borderLinkIdx;
-
         unsigned int largestLabel = currentLabel;
+        if (y * width + x == 0) {
+            printf("firstBorderLinkIdx %d\n", firstBorderLinkIdx);
+        }
         
-        char found = 0;
-        char lastDir = 0;
-        do {
-            if (borderLinks.x == 1 && lastDir != 2) {
+        char lastDir = 1;
+        int iter = 0;
+        while(true) {
+            if (borderLinks.x >= 1 && (borderLinks.y == 0 || borderLinks.w == 0) && lastDir != 2) {
                 lastDir = 0;
                 borderLinkIdx = borderLinkIdx + 1;
                 borderLinks = links[borderLinkIdx];
-            } else if (borderLinks.y == 1 && lastDir != 3) {
+            } else if (borderLinks.y >= 1 && (borderLinks.x == 0 || borderLinks.z == 0) && lastDir != 3) {
                 lastDir = 1;
                 borderLinkIdx = borderLinkIdx + width;
                 borderLinks = links[borderLinkIdx];
-            } else if (borderLinks.z == 1 && lastDir != 0) {
+            } else if (borderLinks.z >= 1 && (borderLinks.y == 0 || borderLinks.w == 0) && lastDir != 0) {
                 lastDir = 2;
                 borderLinkIdx = borderLinkIdx - 1;
                 borderLinks = links[borderLinkIdx];
-            } else if (borderLinks.w == 1 && lastDir != 1) {
+            } else if (borderLinks.w >= 1 && (borderLinks.x == 0 || borderLinks.z == 0) && lastDir != 1) {
                 lastDir = 3;
                 borderLinkIdx = borderLinkIdx - width;
                 borderLinks = links[borderLinkIdx];
             }
 
             largestLabel = max(input[borderLinkIdx], largestLabel);
+            if (y * width + x == 100) {
+                if (iter <= 10000) {
+                    printf("row: %d, col: %d\n", borderLinkIdx / width, borderLinkIdx % width);
+                    if (borderLinkIdx == firstBorderLinkIdx) {
+                        printf("match \n");
+                    }
+                }
+            }
+            // if (y * width + x == 0 && iter % 200000 == 0) {
+            //     // printf("iter %d\n", iter);
+            // }
+            iter++;
+            // if (x < 80) {öjsfklsadjfölas
+            //     out[borderLinkIdx] = 40000;
+            // if (iter > 100000) {
+            //     break;
+            // }
+            if (borderLinkIdx == firstBorderLinkIdx) {
+                // printf("inner out iter\n");
+                break;
+            }
         }
-        while (firstBorderLinkIdx != borderLinkIdx);
 
+        if (y * width + x == 0) {
+            printf("out iter %d\n", iter);
+        }
         out[y * width + x] = largestLabel;
     }
     
