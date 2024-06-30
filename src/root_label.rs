@@ -79,6 +79,26 @@ pub fn label_components_far_root<Mods: OnDropBuffer>(
     )
 }
 
+pub fn label_components_root_candidates_find<Mods: OnDropBuffer>(
+    device: &CUDA<Mods>,
+    input: &CUDAPtr<u32>,
+    links: &CUDAPtr<u16>,
+    width: usize,
+    height: usize,
+) -> custos::Result<()> {
+    launch_kernel(
+        device,
+        [width as u32 / 32 + 1, height as u32 / 32 + 1, 1],
+        // [16, 16, 1],
+        [32, 32, 1],
+        // [64, 34, 1],
+        // [32, 32, 1],
+        0,
+        DEC_CCL,
+        "rootFindCandidates",
+        &[input, links, &width, &height],
+    )
+}
 pub fn label_components_root_find<Mods: OnDropBuffer>(
     device: &CUDA<Mods>,
     input: &CUDAPtr<u32>,
@@ -97,13 +117,7 @@ pub fn label_components_root_find<Mods: OnDropBuffer>(
         0,
         DEC_CCL,
         "rootFind",
-        &[
-            input,
-            out,
-            links,
-            &width,
-            &height,
-        ],
+        &[input, out, links, &width, &height],
     )
 }
 

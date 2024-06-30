@@ -2,10 +2,13 @@ use std::{fmt::Display, mem::size_of, ptr::null, time::Instant};
 
 use clap::Parser;
 use connected_components::{
-    check_error, connected_comps::label_with_connection_info, decode_raw_jpeg,
-    globalize_single_link_horizontal, globalize_single_link_vertical, jpeg_decoder,
-    label_with_shared_links_interleaved, label_with_single_links,
-    root_label::label_components_root_find, utils::to_interleaved_rgba8, Args,
+    check_error,
+    connected_comps::label_with_connection_info,
+    decode_raw_jpeg, globalize_single_link_horizontal, globalize_single_link_vertical,
+    jpeg_decoder, label_with_shared_links_interleaved, label_with_single_links,
+    root_label::{label_components_root_candidates_find, label_components_root_find},
+    utils::to_interleaved_rgba8,
+    Args,
 };
 use custos::{
     cuda::{
@@ -595,7 +598,7 @@ fn update_on_mode_change<'a, Mods>(
         Mode::ConnectionInfo32x32 => {}
         Mode::ConnectionInfoWide => {}
         Mode::RootLabel => {
-            println!("connection info");
+            println!("connection info root label");
 
             let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
 
@@ -663,6 +666,7 @@ fn update_on_mode_change<'a, Mods>(
             // println!("root candidates: {root_candidates:?}");
 
             // init_root_links(device, &mut root_links, width, height).unwrap();
+            label_components_root_candidates_find(device, &labels, &links, width, height).unwrap();
 
             device.stream().sync().unwrap();
             println!("setup dur: {:?}", setup_dur.elapsed());
@@ -907,19 +911,22 @@ fn update_on_mode_change<'a, Mods>(
 
             let start = Instant::now();
 
-            label_components_root_find(
-                device,
-                &labels,
-                &mut pong_updated_labels,
-                &links,
-                width,
-                height,
-            )
-            .unwrap();
+            label_components_root_candidates_find(device, &labels, &links, width, height).unwrap();
+
+            // label_components_root_find(
+            //     device,
+            //     &labels,
+            //     &mut pong_updated_labels,
+            //     &links,
+            //     width,
+            //     height,
+            // )
+            // .unwrap();
             device.stream().sync().unwrap();
 
             println!("labeling took {:?}, ", start.elapsed());
 
+            let mut pong_updated_labels = labels.clone();
             *colorless_updated_labels = labels.clone();
             copy_to_surface_unsigned(&pong_updated_labels, surface, width, height);
             // println!("labels: {:?}", labels.read());

@@ -411,6 +411,33 @@ extern "C" {
 
     }
 
+    __global__ void rootFindCandidates(unsigned int* input, ushort4* links, int width, int height) {
+        unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+        unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (x >= width || y >= height) {
+            return;
+        }
+        
+        unsigned int outIdx = y * width + x;
+        unsigned int currentIdx;
+        ushort4 currentLinks;
+        bool done = false;
+
+        while (!done) {
+            currentIdx = y * width + x;
+            currentLinks = links[currentIdx];
+            if (currentLinks.y > 0) {
+                y += currentLinks.y;
+            } else if (currentLinks.x > 0) {
+                x += currentLinks.x;
+            } else {
+                done = true;
+            }
+        }
+
+        input[outIdx] = input[currentIdx];
+    }
     __global__ void rootFind(unsigned int* input, unsigned int* out, ushort4* links, int width, int height) {
         unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
         unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
