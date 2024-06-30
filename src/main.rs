@@ -630,8 +630,8 @@ fn update_on_mode_change<'a, Mods>(
             //     height,
             // );
 
-            globalize_links_horizontal(&mut links, width, height);
-            globalize_links_vertical(&mut links, width, height);
+            // globalize_links_horizontal(&mut links, width, height);
+            // globalize_links_vertical(&mut links, width, height);
 
             // println!("links: {links:?}");
 
