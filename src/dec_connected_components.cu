@@ -479,6 +479,8 @@ extern "C" {
                 lastDir = 3;
                 borderLinkIdx = borderLinkIdx - width;
                 borderLinks = links[borderLinkIdx];
+            } else {
+                lastDir = 255;
             }
 
             largestLabel = max(input[borderLinkIdx], largestLabel);

@@ -582,8 +582,8 @@ pub fn color_component_at_pixel_exact<Mods: OnDropBuffer>(
     .unwrap()
 }
 
-pub fn read_pixel<Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()>>(
-    surface: &custos::Buffer<u8, CUDA<Mods>>,
+pub fn read_pixel<'a, Mods: OnDropBuffer + OnNewBuffer<'a, u8, CUDA<Mods>, ()>>(
+    surface: &'a custos::Buffer<u8, CUDA<Mods>>,
     x: usize,
     y: usize,
     width: usize,

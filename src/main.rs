@@ -4,6 +4,10 @@ use clap::Parser;
 use connected_components::{
     check_error,
     connected_comps::label_with_connection_info,
+    connected_comps_border::{
+        classify_root_candidates_shifting_border, create_border_path,
+        label_with_shared_links_interleaved_border,
+    },
     decode_raw_jpeg, globalize_single_link_horizontal, globalize_single_link_vertical,
     jpeg_decoder, label_with_shared_links_interleaved, label_with_single_links,
     root_label::{label_components_root_candidates_find, label_components_root_find},
@@ -34,6 +38,7 @@ enum Mode {
     RootLabel,
     M2048,
     FindRoot,
+    BorderRoot,
 }
 
 impl Mode {
@@ -48,6 +53,7 @@ impl Mode {
             Mode::RootLabel => Mode::ConnectionInfoWide,
             Mode::ConnectionInfoWide => Mode::ConnectionInfo32x32,
             Mode::ConnectionInfo32x32 => Mode::None,
+            Mode::BorderRoot => Mode::None,
         };
         *self = mode;
     }
@@ -479,76 +485,49 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 gl.delete_vertex_array(vertex_array);
                                 *control_flow = ControlFlow::Exit
                             }
+                            let mut update = false;
 
                             if keycode == &VirtualKeyCode::Plus {
                                 threshold += 1;
-                                update_on_mode_change(
-                                    &mode,
-                                    &mut surface,
-                                    &mut surface_texture,
-                                    channels,
-                                    &channel,
-                                    width as usize,
-                                    height as usize,
-                                    &device,
-                                    &mut updated_labels,
-                                    &mut colorless_updated_labels,
-                                    threshold,
-                                );
+                                update = true;
                             }
 
                             if keycode == &VirtualKeyCode::Minus {
                                 threshold -= 1;
-                                update_on_mode_change(
-                                    &mode,
-                                    &mut surface,
-                                    &mut surface_texture,
-                                    channels,
-                                    &channel,
-                                    width as usize,
-                                    height as usize,
-                                    &device,
-                                    &mut updated_labels,
-                                    &mut colorless_updated_labels,
-                                    threshold,
-                                );
+                                update = true;
+                            }
+                            
+                            if keycode == &VirtualKeyCode::B {
+                                update = true;
+                                mode = Mode::BorderRoot;
                             }
 
                             if (VirtualKeyCode::Key1..VirtualKeyCode::Key0).contains(keycode) {
                                 mode = Mode::from(*keycode as u8);
-                                update_on_mode_change(
-                                    &mode,
-                                    &mut surface,
-                                    &mut surface_texture,
-                                    channels,
-                                    &channel,
-                                    width as usize,
-                                    height as usize,
-                                    &device,
-                                    &mut updated_labels,
-                                    &mut colorless_updated_labels,
-                                    threshold,
-                                );
+                                update = true;
                             }
 
                             match keycode {
                                 &VirtualKeyCode::Space => {
                                     mode.next();
-                                    update_on_mode_change(
-                                        &mode,
-                                        &mut surface,
-                                        &mut surface_texture,
-                                        channels,
-                                        &channel,
-                                        width as usize,
-                                        height as usize,
-                                        &device,
-                                        &mut updated_labels,
-                                        &mut colorless_updated_labels,
-                                        threshold,
-                                    );
+                                    update = true;
                                 }
                                 _ => (),
+                            }
+                            if update {
+                                update_on_mode_change(
+                                    &mode,
+                                    &mut surface,
+                                    &mut surface_texture,
+                                    channels,
+                                    &channel,
+                                    width as usize,
+                                    height as usize,
+                                    &device,
+                                    &mut updated_labels,
+                                    &mut colorless_updated_labels,
+                                    threshold,
+                                )
                             }
                         }
                     }
@@ -570,14 +549,14 @@ fn update_on_mode_change<'a, Mods>(
     height: usize,
     device: &'static CUDA<Mods>,
     updated_labels: &mut custos::Buffer<u8, CUDA<Mods>>,
-    colorless_updated_labels: &mut custos::Buffer<u32, CUDA<Mods>>,
+    colorless_updated_labels: &mut custos::Buffer<'a, u32, CUDA<Mods>>,
     threshold: i32,
 ) where
     Mods: OnDropBuffer
-        + OnNewBuffer<u8, CUDA<Mods>, ()>
-        + OnNewBuffer<u32, CUDA<Mods>, ()>
-        + OnNewBuffer<i32, CUDA<Mods>, ()>
-        + OnNewBuffer<u16, CUDA<Mods>, ()>,
+        + OnNewBuffer<'a, u8, CUDA<Mods>, ()>
+        + OnNewBuffer<'a, u32, CUDA<Mods>, ()>
+        + OnNewBuffer<'a, i32, CUDA<Mods>, ()>
+        + OnNewBuffer<'a, u16, CUDA<Mods>, ()>,
 {
     match mode {
         Mode::None => {
@@ -932,6 +911,33 @@ fn update_on_mode_change<'a, Mods>(
             // println!("labels: {:?}", labels.read());
             copy_to_interleaved_buf(&pong_updated_labels, updated_labels, width, height);
             device.stream().sync().unwrap();
+        }
+        Mode::BorderRoot => {
+            let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
+
+            let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
+
+            let setup_dur = Instant::now();
+
+            label_with_shared_links_interleaved_border(
+                &mut labels,
+                &mut links,
+                interleaved_channel,
+                width,
+                height,
+            );
+
+            device.stream().sync().unwrap();
+
+            classify_root_candidates_shifting_border(device, &labels, &links, width, height)
+                .unwrap();
+
+            println!("setup dur: {:?}", setup_dur.elapsed());
+
+            create_border_path(device, &mut labels, &links, width, height).unwrap();
+
+            copy_to_surface_unsigned(&labels, surface, width, height);
+            copy_to_interleaved_buf(&labels, updated_labels, width, height);
         }
     }
 }

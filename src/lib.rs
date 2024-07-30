@@ -1,4 +1,5 @@
 pub mod connected_comps;
+pub mod connected_comps_border;
 pub mod jpeg_decoder;
 pub mod root_label;
 pub mod utils;
@@ -18,7 +19,7 @@ use nvjpeg_sys::{
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
-    #[arg(short, long, default_value = "./maze.jpg")]
+    #[arg(short, long, default_value = "./maze512x512.jpg")]
     pub image_path: String,
 }
 
@@ -29,7 +30,7 @@ pub fn check_error(value: u32, msg: &str) {
     }
 }
 
-pub unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<u8, CUDA<Mods>, ()>>(
+pub unsafe fn decode_raw_jpeg<'a, Mods: OnDropBuffer + OnNewBuffer<'a, u8, CUDA<Mods>, ()>>(
     raw_data: &[u8],
     device: &'a CUDA<Mods>,
     override_height: Option<usize>,
