@@ -46,6 +46,7 @@ pub fn create_border_path(
     device: &CudaDevice,
     labels: &mut CUDAPtr<u32>,
     links: &CUDAPtr<u16>,
+    has_visited: &CUDAPtr<u8>,
     width: usize,
     height: usize,
 ) -> custos::Result<()> {
@@ -56,6 +57,24 @@ pub fn create_border_path(
         0,
         BORDER_CCL,
         "createBorderPath",
+        &[labels, links, has_visited, &width, &height],
+    )
+}
+
+pub fn fetch_from_border<Mods: OnDropBuffer>(
+    device: &CUDA<Mods>,
+    labels: &CUDAPtr<u32>,
+    links: &CUDAPtr<u16>,
+    width: usize,
+    height: usize,
+) -> custos::Result<()> {
+    launch_kernel(
+        device,
+        [width as u32 / 32 + 1, height as u32 / 32 + 1, 1],
+        [32, 32, 1],
+        0,
+        BORDER_CCL,
+        "fetchFromBorder",
         &[labels, links, &width, &height],
     )
 }

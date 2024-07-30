@@ -5,8 +5,7 @@ use connected_components::{
     check_error,
     connected_comps::label_with_connection_info,
     connected_comps_border::{
-        classify_root_candidates_shifting_border, create_border_path,
-        label_with_shared_links_interleaved_border,
+        classify_root_candidates_shifting_border, create_border_path, fetch_from_border, label_with_shared_links_interleaved_border
     },
     decode_raw_jpeg, globalize_single_link_horizontal, globalize_single_link_vertical,
     jpeg_decoder, label_with_shared_links_interleaved, label_with_single_links,
@@ -87,7 +86,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let raw_data = std::fs::read(args.image_path).unwrap();
 
-        let (channels, width, height) = decode_raw_jpeg(&raw_data, device, None).unwrap();
+        let (channels, width, height) = decode_raw_jpeg(&raw_data, device, Some(4000)).unwrap();
         let channel = to_interleaved_rgba8(device, &channels, width, height);
         // decoder.width = width as usize;
         // decoder.height = height as usize;
@@ -609,8 +608,8 @@ fn update_on_mode_change<'a, Mods>(
             //     height,
             // );
 
-            // globalize_links_horizontal(&mut links, width, height);
-            // globalize_links_vertical(&mut links, width, height);
+            globalize_links_horizontal(&mut links, width, height);
+            globalize_links_vertical(&mut links, width, height);
 
             // println!("links: {links:?}");
 
@@ -914,6 +913,10 @@ fn update_on_mode_change<'a, Mods>(
         }
         Mode::BorderRoot => {
             let mut labels: custos::Buffer<u32, _> = custos::Buffer::new(device, width * height);
+            let mut has_visited: custos::Buffer<u8, _> = custos::Buffer::new(device, width * height);
+            labels.clear();
+            has_visited.clear();
+
 
             let mut links: custos::Buffer<u16, _> = custos::Buffer::new(device, width * height * 4);
 
@@ -927,17 +930,59 @@ fn update_on_mode_change<'a, Mods>(
                 height,
             );
 
+            globalize_links_horizontal(&mut links, width, height);
+            globalize_links_vertical(&mut links, width, height);
+
             device.stream().sync().unwrap();
 
             classify_root_candidates_shifting_border(device, &labels, &links, width, height)
                 .unwrap();
 
+            device.stream().sync().unwrap();
+
+            create_border_path(device, &mut labels, &links, &has_visited, width, height).unwrap();
+
+            device.stream().sync().unwrap();
+            fetch_from_border(device, &labels, &links, width, height).unwrap();
+
             println!("setup dur: {:?}", setup_dur.elapsed());
 
-            create_border_path(device, &mut labels, &links, width, height).unwrap();
+            let mut has_updated: custos::Buffer<'_, _, _> = custos::Buffer::<_, _>::new(device, 1);
+
+            let run_dur = Instant::now();
+
+            let mut iters = 0;
+
+            let mut no_ping_pong = || {
+                loop {
+                    label_components_far_root(
+                        &device,
+                        &labels,
+                        &mut unsafe { labels.base().shallow() },
+                        &links,
+                        width,
+                        height,
+                        &mut has_updated,
+                    )
+                    .unwrap();
+
+                    // device.stream().sync().unwrap();
+                    iters += 1;
+                    if has_updated.read()[0] == 0 {
+                        break;
+                    }
+
+                    has_updated.clear();
+                }
+            };
+
+            // no_ping_pong();
+
+            println!("run dur: {:?}, iters: {iters}", run_dur.elapsed());
 
             copy_to_surface_unsigned(&labels, surface, width, height);
             copy_to_interleaved_buf(&labels, updated_labels, width, height);
+            device.stream().sync().unwrap();
         }
     }
 }
